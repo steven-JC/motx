@@ -1,0 +1,24 @@
+{
+    "singleQuote": true,
+    "semi": false,
+    "tabWidth": 4,
+    "bracketSpacing": true,
+    "arrowParens": "always",
+    "trailingComma": "none",
+    "overrides": [
+        {
+            "files": "src/**/*.js",
+            "options": {
+                "parser": "babel",
+                "singleQuote": false
+            }
+        },
+        {
+            "files": "src/**/*.scss",
+            "options": {
+                "singleQuote": false,
+                "semi": true
+            }
+        }
+    ]
+}

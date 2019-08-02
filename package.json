@@ -1,0 +1,33 @@
+{
+    "name": "motx",
+    "version": "0.1.7",
+    "description": "An advanced mediator and also a micro state management.",
+    "main": "dist/index.js",
+    "types": "dist/index.d.ts",
+    "files": [
+        "dist"
+    ],
+    "scripts": {
+        "dev": "tsc -w",
+        "prepare": "tsc"
+    },
+    "repository": {
+        "type": "git",
+        "url": "git@github.com:tunkjs/Tnk.git"
+    },
+    "keywords": [
+        "mediator",
+        "store",
+        "state",
+        "state management"
+    ],
+    "author": "stevenjc.chen",
+    "license": "MIT",
+    "bugs": {
+        "url": "https://github.com/tunkjs/Tnk/issues"
+    },
+    "devDependencies": {
+        "@types/node": "^12.6.8",
+        "typescript": "3.0.1"
+    }
+}
