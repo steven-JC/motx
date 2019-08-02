@@ -1,7 +1,7 @@
 {
     "name": "motx",
     "version": "0.1.7",
-    "description": "An advanced mediator and also a micro state management.",
+    "description": "An advanced mediator and also a micro state management center.",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "files": [

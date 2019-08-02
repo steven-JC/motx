@@ -1,3 +1,3 @@
-# tnkjs
+# Motx
 
-An advanced Mediator and also a micro data center.
+### An advanced Mediator and also a micro state management center.
