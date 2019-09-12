@@ -7,6 +7,10 @@ export default class MotX {
     protected pipes: { [pipeName: string]: Pipe }
     protected isolate: boolean
 
+    /**
+     * constructor
+     * @param options {store, hooks, pipes, isolate, onReceive}
+     */
     constructor(options: MotXOptions) {
         const {
             store,
