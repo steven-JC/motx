@@ -1,14 +1,84 @@
 const MotX = require('../dist').default
 
 describe('Motx', () => {
+    describe('isolate', () => {
+        it('isolate', () => {
+            return new Promise((r) => {
+                const store = { bean: { count: 1 } }
+                let motx = new MotX({
+                    store,
+                    isolate: true
+                })
+                if (motx.getState('bean') !== store.bean) {
+                    const state = {}
+                    motx.setState('bean', state)
+                    if (motx.getState('bean') !== state) {
+                        motx.publish('set:bean', state)
+                        motx.getState('bean') !== state && r()
+                    }
+                }
+            })
+        })
+        it('!isolate', () => {
+            return new Promise((r) => {
+                const store = { bean: { count: 1 } }
+                let motx = new MotX({
+                    store,
+                    isolate: false
+                })
+                if (motx.getState('bean') === store.bean) {
+                    const state = {}
+                    motx.setState('bean', state)
+                    if (motx.getState('bean') === state) {
+                        motx.publish('set:bean', state)
+                        motx.getState('bean') === state && r()
+                    }
+                }
+            })
+        })
+    })
+    describe('getState && setState', () => {
+        it('getState', () => {
+            return new Promise((r) => {
+                let motx = new MotX({
+                    store: { bean: { count: 1 } }
+                })
+                motx.getState('bean').count === 1 && r()
+            })
+        })
+        it('setState !silent', () => {
+            return new Promise((r) => {
+                let motx = new MotX({
+                    store: { bean: { count: 1 } }
+                })
+                let i = 0
+                motx.subscribe('bean:change', ({ count }) => {
+                    i += count
+                })
+                motx.setState('bean', { count: 2 })
+                i === 2 && r()
+            })
+        })
+
+        it('setState silent', () => {
+            return new Promise((r) => {
+                let motx = new MotX({
+                    store: { bean: { count: 1 } }
+                })
+                let i = 0
+                motx.subscribe('bean:change', ({ count }) => {
+                    i += count
+                })
+                motx.setState('bean', { count: 2 }, true)
+                i === 0 && r()
+            })
+        })
+    })
     describe('pipes & onReceive', () => {
         it('publish(pipe#channel)', () => {
             return new Promise((r) => {
                 let motx = new MotX({
-                    store: {
-                        fvck: false,
-                        bean: { count: 1 }
-                    },
+                    store: {},
                     pipes: {
                         ns1(stringifyed) {
                             const { channel, args } = JSON.parse(stringifyed)
@@ -34,10 +104,7 @@ describe('Motx', () => {
         it('did', () => {
             return new Promise((r) => {
                 let motx = new MotX({
-                    store: {
-                        fvck: false,
-                        bean: { count: 1 }
-                    },
+                    store: { fvck: 1 },
                     hooks: {
                         willSetState(channel, state) {
                             return state[0]
