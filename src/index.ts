@@ -93,7 +93,7 @@ export default class MotX {
         this.event.off(channel, handler)
     }
 
-    public destroy() {
+    public dispose() {
         ;(this.store as any) = null
         this.event.removeAllListeners()
         ;(this.event as any) = null
