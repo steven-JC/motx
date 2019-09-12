@@ -1,6 +1,6 @@
 {
     "name": "motx",
-    "version": "0.1.7",
+    "version": "1.0.0",
     "description": "An advanced mediator and also a micro state management center.",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -29,5 +29,8 @@
     "devDependencies": {
         "@types/node": "^12.6.8",
         "typescript": "3.0.1"
+    },
+    "dependencies": {
+        "eventemitter3": "^4.0.0"
     }
 }

@@ -1,118 +1,106 @@
+import * as EventEmitter from 'eventemitter3'
 export default class MotX {
-    protected subscribers: { [key: string]: Subscriber[] } = {}
+    protected event: EventEmitter
     protected store: Store
     protected hooks: Hooks
+    protected pipes: { [pipeName: string]: Pipe }
     protected isolate: boolean
 
-    constructor(store: Store, hooks?: Hooks, isolate: boolean = true) {
+    constructor(options: MotXOptions) {
+        const { store, hooks = {}, isolate = true, pipes = {} } = options
+        this.event = new EventEmitter()
         this.isolate = isolate
         this.hooks = {
-            willPublish: (channel: string, data: State, isolate?: boolean) =>
-                true,
+            willPublish: (channel: string, args: any[]) => true,
             willSetState: (
-                actionName: string,
                 fieldName: string,
                 newState: State,
-                isolate: boolean
+                isolate: boolean,
+                store: Store
             ) => newState,
             didSetState: (
-                actionName: string,
                 fieldName: string,
                 newState: State,
+                isolate: boolean,
                 store: Store
             ) => {},
             ...hooks
         }
-        if (!store) throw DEFAULT_DATA_ERR_MSG
-        this.store = this.clone(store) as Store
+        this.pipes = pipes
+        if (!store) throw new Error(`[MotX] ${DEFAULT_FIELD_ERR_MSG}`)
+        this.store = this.ifClone(store) as Store
     }
 
-    public getState(fieldName: string, isolate: boolean = true) {
-        return this.clone(this.store[fieldName], isolate)
+    public getState(fieldName: string): State {
+        return this.ifClone(this.store[fieldName])
     }
 
-    public setState(
-        actionName: string,
-        fieldName: string,
-        newState: State | StateHandler,
-        isolate: boolean = true
-    ) {
+    public setState(fieldName: string, newState: State): void {
         if (typeof this.store[fieldName] === 'undefined') {
             throw new Error(
-                `[MotX] field name should be one of ${Object.keys(this.store)}`
+                `[MotX] field name should be one of ${Object.keys(
+                    this.store
+                )}, ${DEFAULT_FIELD_ERR_MSG}`
             )
         }
 
-        const set = (newState) => {
-            const newStat: State | undefined =
-                this.hooks.willSetState &&
-                this.hooks.willSetState.call(
-                    this,
-                    actionName,
-                    fieldName,
-                    newState,
-                    isolate
-                )
-            if (typeof newStat === 'undefined') {
-                return
-            }
-            this.store[fieldName] = this.clone(newStat, isolate)
-            const subscribers = this.subscribers[actionName] || []
-            let i = subscribers.length
-            while (i--) subscribers[i](this.clone(newStat, isolate))
-            this.hooks.didSetState &&
-                this.hooks.didSetState.call(
-                    this,
-                    actionName,
-                    fieldName,
-                    newState,
-                    this.store
-                )
+        if (typeof newState === 'undefined') {
+            throw new Error(NEW_STATE_UNDEFINED_ERR_MSG)
         }
 
-        let res
-        if (typeof newState === 'function') {
-            res = newState(this.clone(this.store[fieldName], isolate))
-        } else {
-            res = newState
+        const newStat: State | undefined =
+            this.hooks.willSetState &&
+            this.hooks.willSetState.call(
+                this,
+                fieldName,
+                newState,
+                this.isolate,
+                this.store
+            )
+        if (typeof newStat === 'undefined') {
+            return
         }
-        if (res && res.then) {
-            res.then((newState) => {
-                if (typeof newState === 'undefined') throw UNDEFINED_ERR_MSG
-                set(newState)
-            })
-        } else {
-            set(res)
-        }
+        this.store[fieldName] = this.ifClone(newStat)
+        this.event.emit(`${fieldName}-change`, this.ifClone(newStat))
+        this.hooks.didSetState &&
+            this.hooks.didSetState.call(
+                this,
+                fieldName,
+                newState,
+                this.isolate,
+                this.store
+            )
     }
-
-    public pub(channel: string, data: State, isolate: boolean = true) {
-        const subscribers = this.subscribers[channel] || []
+    /**
+     *
+     * @param channel  `pipeName#channel`    `pipeName#set:fieldName`    `pipeName#assign:fieldName`     `fieldName:changed`
+     * @param args
+     */
+    public publish(channel: string, ...args: any[]) {
         if (
             this.hooks.willPublish &&
-            !!this.hooks.willPublish.call(this, channel, data, isolate)
+            !!this.hooks.willPublish.call(this, channel, args)
         ) {
-            let i = subscribers.length
-            while (i--) subscribers[i](this.clone(data, isolate))
+            this.event.emit(channel, ...args)
         }
     }
 
-    public sub(channel: string, subscriber: Subscriber) {
-        const subscribers = (this.subscribers[channel] =
-            this.subscribers[channel] || [])
-        subscribers.push(subscriber)
+    public subscribe(channel: string, handler: Handler) {
+        this.event.on(channel, handler)
+    }
+
+    public unsubscribe(channel, handler?: Handler) {
+        this.event.off(channel, handler)
     }
 
     public destroy() {
-        this.store = {}
-        this.subscribers = {}
+        ;(this.store as any) = null
+        this.event.removeAllListeners()
+        ;(this.event as any) = null
     }
 
-    protected clone(
-        state: State | Store,
-        isolate: boolean = true
-    ): State | Store {
-        if (!this.isolate || !isolate) {
+    protected ifClone(state: State | Store): State | Store {
+        if (!this.isolate) {
             return state
         }
         if (state && typeof state === 'object') {
@@ -121,42 +109,38 @@ export default class MotX {
     }
 }
 
-const DEFAULT_DATA_ERR_MSG =
-    '[MotX] you should define the fields of store when instantiate MotX'
-const UNDEFINED_ERR_MSG = '[MotX] new state should not be undefined'
+const DEFAULT_FIELD_ERR_MSG =
+    'you should define the fields of store when instantiate MotX'
+const NEW_STATE_UNDEFINED_ERR_MSG = '[MotX] new state should not be undefined'
 declare type Store = { [fieldName: string]: State }
-declare type State =
-    | number
-    | number[]
-    | string
-    | string[]
-    | PlainObject
-    | PlainObject[]
-    | boolean
-    | boolean[]
-    | null
-    | null[]
+declare type State = any
 
 declare interface Hooks {
-    willPublish?(channel: string, data: State, isolate?: boolean): boolean
+    willPublish?(channel: string, args: any[]): boolean
     willSetState?(
-        actionName: string,
         fieldName: string,
         newState: State,
-        isolate?: boolean
+        isolate: boolean,
+        store: Store
     ): State | undefined
     didSetState?(
-        actionName: string,
         fieldName: string,
         newState: State,
+        isolate: boolean,
         store?: Store
     ): void
 }
-declare interface StateHandler {
-    (data: State): State
+declare interface MotXOptions {
+    store: Store
+    hooks?: Hooks
+    pipes?: { [pipeName: string]: Pipe }
+    isolate?: boolean
 }
-declare interface Subscriber {
-    (data: State): void
+declare interface Pipe {
+    (channel, ...args: any[]): void
+}
+declare interface Handler {
+    (...args: any[]): void
 }
 
 declare interface PlainObject {
