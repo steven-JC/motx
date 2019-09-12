@@ -51,8 +51,7 @@ export default class MotX {
         newState: State,
         silent?: boolean
     ): void {
-        this.updateStore('set', fieldName, newState)
-        if (!silent) {
+        if (this.updateStore('set', fieldName, newState) && !silent) {
             this.event.emit(
                 this.stringify({
                     fieldName: fieldName,
@@ -72,14 +71,17 @@ export default class MotX {
             if (parsed.pipeName) {
                 this.send(parsed.pipeName, this.stringify(parsed), args)
             } else if (parsed.mutation) {
-                this.updateStore(parsed.mutation, parsed.fieldName, args[0])
-                this.event.emit(
-                    this.stringify({
-                        fieldName: parsed.fieldName,
-                        event: 'change'
-                    }),
-                    this.ifClone(args[0])
-                )
+                if (
+                    this.updateStore(parsed.mutation, parsed.fieldName, args[0])
+                ) {
+                    this.event.emit(
+                        this.stringify({
+                            fieldName: parsed.fieldName,
+                            event: 'change'
+                        }),
+                        this.ifClone(this.store[parsed.fieldName])
+                    )
+                }
             } else {
                 this.event.emit(channel, ...args)
             }
@@ -121,7 +123,7 @@ export default class MotX {
                 this.store
             )
         if (typeof newStat === 'undefined') {
-            return
+            return false
         }
         switch (mutation) {
             case 'set':
@@ -142,6 +144,7 @@ export default class MotX {
                 this.isolate,
                 this.store
             )
+        return true
     }
 
     protected send(pipeName, channel, args: any[]) {
@@ -162,7 +165,14 @@ export default class MotX {
     }
     //`pipeName#channel`    `pipeName#set:fieldName`    `pipeName#merge:fieldName`     `fieldName:changed`
     protected parse(cnn: string) {
-        const [matched, hasPipe, pipeName, hasMutation, mutation, fieldName] =
+        const [
+            matched,
+            hasPipe,
+            pipeName,
+            hasMutation,
+            mutation,
+            fieldName
+        ]: string[] =
             /(([\w\-_\d\.]+)\s*\#)?\s*(([\w\-_\d\.]+)\s*\:)?\s*([\w\-_\d\.]+)/.exec(
                 cnn
             ) || []
@@ -170,7 +180,7 @@ export default class MotX {
             throw new Error(`[MotX] illegal channel: ${cnn}`)
         }
 
-        if (!Mutation.includes(mutation)) {
+        if (mutation && !Mutation.includes(mutation)) {
             throw new Error(
                 `[MotX] illegal mutation: ${mutation}, should be one of ${Mutation}`
             )

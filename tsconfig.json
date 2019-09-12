@@ -6,7 +6,7 @@
         "module": "commonjs",
         "target": "es5",
         "lib": ["es2017", "dom"],
-        "sourceMap": false,
+        "sourceMap": true,
         "moduleResolution": "node",
         "noImplicitReturns": true,
         "noImplicitThis": true,

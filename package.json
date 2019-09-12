@@ -9,7 +9,8 @@
     ],
     "scripts": {
         "dev": "tsc -w",
-        "prepare": "tsc"
+        "prepare": "tsc",
+        "test-dev": "mocha test/*.spec.js --recursive --inspect --watch --full-trace --bail --async-only --timeout 1000"
     },
     "repository": {
         "type": "git",
@@ -28,6 +29,7 @@
     },
     "devDependencies": {
         "@types/node": "^12.6.8",
+        "mocha": "^6.2.0",
         "typescript": "3.0.1"
     },
     "dependencies": {
