@@ -1,6 +1,5 @@
 import * as EventEmitter from 'eventemitter3'
 export default class MotX {
-    public readonly onReceive: ReceiveHanler
     protected event: EventEmitter
     protected store: Store
     protected hooks: Hooks
@@ -9,22 +8,12 @@ export default class MotX {
 
     /**
      * constructor
-     * @param options {store, hooks, pipes, isolate, onReceive}
+     * @param options {store, hooks, pipes, isolate}
      */
     constructor(options: MotXOptions) {
-        const {
-            store,
-            hooks = {},
-            isolate = true,
-            pipes = {},
-            onReceive = (jsonStringifyed: string) => {
-                const { channel, args } = JSON.parse(jsonStringifyed)
-                this.publish(channel, ...args)
-            }
-        } = options
+        const { store = {}, hooks = {}, isolate = true, pipes = {} } = options
         this.event = new EventEmitter()
         this.isolate = isolate
-        this.onReceive = onReceive
         this.hooks = {
             willPublish: (channel: string, args: any[]) => true,
             willSetState: (
@@ -44,6 +33,11 @@ export default class MotX {
         this.pipes = pipes
         if (!store) throw new Error(`[MotX] ${DEFAULT_FIELD_ERR_MSG}`)
         this.store = this.ifClone(store) as Store
+    }
+
+    public onReceive(jsonStringifyed: string) {
+        const { channel, args } = JSON.parse(jsonStringifyed)
+        this.publish(channel, ...args)
     }
 
     public getState(fieldName: string): State {
@@ -242,14 +236,11 @@ declare interface MotXOptions {
     hooks?: Hooks
     pipes?: { [pipeName: string]: Pipe }
     isolate?: boolean
-    onReceive?: ReceiveHanler
 }
 declare interface Pipe {
     (jsonStringifyed: string): void
 }
-declare interface ReceiveHanler {
-    (jsonStringifyed: string): void
-}
+
 declare interface Handler {
     (...args: any[]): void
 }
