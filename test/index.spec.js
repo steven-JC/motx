@@ -75,7 +75,7 @@ describe('Motx', () => {
         })
     })
     describe('pipes & onReceive', () => {
-        it('publish(pipe#channel)', () => {
+        it('publish(channel >> pipe)', () => {
             return new Promise((done) => {
                 let motx = new MotX({
                     store: {},
@@ -86,7 +86,7 @@ describe('Motx', () => {
                         }
                     }
                 })
-                motx.publish('ns1#channel')
+                motx.publish('channel >> ns1')
             })
         })
 

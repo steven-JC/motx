@@ -67,9 +67,16 @@ export default class MotX {
         ) {
             const parsed = this.parse(channel)
             if (parsed.pipeName) {
-                this.send(parsed.pipeName, this.stringify(parsed), args)
+                if (parsed.pipeName === '*') {
+                    Object.keys(this.pipes).forEach((item) => {
+                        this.send(parsed.pipeName, this.stringify(parsed), args)
+                    })
+                } else {
+                    this.send(parsed.pipeName, this.stringify(parsed), args)
+                }
             } else if (parsed.mutation) {
                 if (
+                    parsed.fieldName &&
                     this.updateStore(parsed.mutation, parsed.fieldName, args[0])
                 ) {
                     this.event.emit(
@@ -161,17 +168,17 @@ export default class MotX {
             return channel
         }
     }
-    //`pipeName#channel`    `pipeName#set:fieldName`    `pipeName#merge:fieldName`     `fieldName:changed`
+    //`channel >> pipeName`    ` set:fieldName >> pipeName`    `merge:fieldName >> pipeName`
     protected parse(cnn: string) {
         const [
             matched,
-            hasPipe,
-            pipeName,
             hasMutation,
             mutation,
-            fieldName
+            fieldName,
+            hasPipe,
+            pipeName
         ]: string[] =
-            /(([\w\-_\d\.]+)\s*\#)?\s*(([\w\-_\d\.]+)\s*\:)?\s*([\w\-_\d\.]+)/.exec(
+            /\s*(([\w\-_\d\.]+)\s*\:)?\s*([\w\-_\d\.]+)\s*(\>\>\s*([\w\-_\d\.\*]+))?/.exec(
                 cnn
             ) || []
         if (!matched) {
