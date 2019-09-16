@@ -52,11 +52,25 @@ describe('Motx', () => {
                     store: { bean: { count: 1 } }
                 })
                 let i = 0
-                motx.subscribe('bean:change', ({ count }) => {
+                motx.subscribe('bean@change', ({ count }) => {
                     i += count
                 })
                 motx.setState('bean', { count: 2 })
                 i === 2 && done()
+            })
+        })
+
+        it('setState newState & oldState', () => {
+            return new Promise((done) => {
+                let motx = new MotX({
+                    store: { bean: { count: 10 } }
+                })
+                let i = 1
+                motx.subscribe('bean@change', (newState, oldState) => {
+                    i += newState.count + oldState.count
+                })
+                motx.setState('bean', { count: 100 })
+                i === 111 && done()
             })
         })
 
@@ -66,7 +80,7 @@ describe('Motx', () => {
                     store: { bean: { count: 1 } }
                 })
                 let i = 0
-                motx.subscribe('bean:change', ({ count }) => {
+                motx.subscribe('bean@change', ({ count }) => {
                     i += count
                 })
                 motx.setState('bean', { count: 2 }, true)
@@ -92,7 +106,7 @@ describe('Motx', () => {
 
         it('onReceive', () => {
             return new Promise((done) => {
-                let motx = new MotX({ store: {} })
+                let motx = new MotX({ store: {}, channels: ['channel'] })
                 motx.subscribe('channel', (arg1, arg2) => {
                     arg1 === 1 && arg2 === 2 && done()
                 })
@@ -136,7 +150,7 @@ describe('Motx', () => {
         it('will', () => {
             return new Promise((done) => {
                 let i = 0
-                motx.subscribe('fvck:change', (data) => {
+                motx.subscribe('fvck@change', (data) => {
                     i += data
                 })
                 motx.publish('set:fvck', [100])
@@ -147,7 +161,7 @@ describe('Motx', () => {
         it('will not', () => {
             return new Promise((done) => {
                 let i = 0
-                motx.subscribe('fvck:change', () => {
+                motx.subscribe('fvck@change', () => {
                     i++
                 })
                 motx.publish('set:fvck', [])
@@ -162,6 +176,7 @@ describe('Motx', () => {
                 store: {
                     fvck: false
                 },
+                channels: ['channel'],
                 hooks: {
                     willPublish(channel, args) {
                         return args[0]
@@ -199,7 +214,8 @@ describe('Motx', () => {
                     fvck: false,
                     bee: [1, 2, 3, 4],
                     bean: { count: 1 }
-                }
+                },
+                channels: ['channel']
             })
         })
         it('publish(channel)', () => {
@@ -244,15 +260,28 @@ describe('Motx', () => {
         })
         it('publish(set:fvck, true)', () => {
             return new Promise((done) => {
-                motx.subscribe('fvck:change', (data) => {
+                motx.subscribe('fvck@change', (data) => {
                     data === true && done()
                 })
                 motx.publish('set:fvck', true)
             })
         })
+        it('publish newState & oldState', () => {
+            return new Promise((done) => {
+                let motx = new MotX({
+                    store: { bean: { count: 10 } }
+                })
+                let i = 1
+                motx.subscribe('bean@change', (newState, oldState) => {
+                    i += newState.count + oldState.count
+                })
+                motx.publish('set:bean', { count: 100 })
+                i === 111 && done()
+            })
+        })
         it('publish(merge:bean, {name})', () => {
             return new Promise((done) => {
-                motx.subscribe('bean:change', (data) => {
+                motx.subscribe('bean@change', (data) => {
                     data.count === 1 && data.name === 'beanbean' && done()
                 })
                 motx.publish('merge:bean', { name: 'beanbean' })
@@ -260,7 +289,7 @@ describe('Motx', () => {
         })
         it('publish(set:bean, {name})', () => {
             return new Promise((done) => {
-                motx.subscribe('bean:change', (data) => {
+                motx.subscribe('bean@change', (data) => {
                     data.name === 'bean' &&
                         typeof data.count === 'undefined' &&
                         done()

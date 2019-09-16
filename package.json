@@ -1,7 +1,7 @@
 {
     "name": "motx",
     "version": "1.0.0",
-    "description": "An advanced mediator and also a micro state management center.",
+    "description": "A lightweight application state transfer and storage tool based on the mediator pattern and provides efficient solutions to communication problems between multiple processes or closed modules",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
     "files": [
@@ -14,7 +14,7 @@
     },
     "repository": {
         "type": "git",
-        "url": "git@github.com:tunkjs/Tnk.git"
+        "url": "git@github.com:steven-JC/motx.git"
     },
     "keywords": [
         "mediator",
@@ -25,7 +25,7 @@
     "author": "stevenjc.chen",
     "license": "MIT",
     "bugs": {
-        "url": "https://github.com/tunkjs/Tnk/issues"
+        "url": "https://github.com/steven-JC/motx/issues"
     },
     "devDependencies": {
         "@types/node": "^12.6.8",
