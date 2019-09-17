@@ -7,10 +7,11 @@ export default class MotX {
     protected pipes: { [pipeName: string]: Pipe }
     protected isolate: boolean
     protected channels: string[]
+    protected actions: { [actionName: string]: Action }
 
     /**
      * constructor
-     * @param options {store, hooks, pipes, isolate}
+     * @param options {store, hooks, pipes, isolate, channels, actions}
      */
     constructor(options: MotXOptions) {
         const {
@@ -18,12 +19,14 @@ export default class MotX {
             hooks = {},
             isolate = true,
             pipes = {},
-            channels = []
+            channels = [],
+            actions = {}
         } = options
         this.event = new EventEmitter()
         this.isolate = isolate
         this.hooks = {
             willPublish: (channel: string, args: any[]) => true,
+            didPublish: (channel: string, args: any[]) => {},
             willSetState: (
                 fieldName: string,
                 newState: State,
@@ -47,6 +50,8 @@ export default class MotX {
             }
         })
         this.pipes = pipes
+        this.actions = actions
+
         if (!store) throw new Error(`[MotX] ${DEFAULT_FIELD_ERR_MSG}`)
         this.store = this.ifClone(store) as Store
     }
@@ -71,7 +76,7 @@ export default class MotX {
         if (this.updateStore('set', fieldName, newState) && !silent) {
             this.event.emit(
                 this.stringifyChannel({
-                    fieldName: fieldName,
+                    target: fieldName,
                     event: 'change'
                 }),
                 newState,
@@ -102,18 +107,29 @@ export default class MotX {
                         args
                     )
                 }
-            } else if (parsed.fieldName && parsed.mutation) {
-                const oldState = this.getState(parsed.fieldName)
-                if (
-                    this.updateStore(parsed.mutation, parsed.fieldName, args[0])
-                ) {
-                    this.event.emit(
-                        this.stringifyChannel({
-                            fieldName: parsed.fieldName,
-                            event: 'change'
-                        }),
-                        this.ifClone(this.store[parsed.fieldName]),
-                        oldState
+            } else if (parsed.target && parsed.action) {
+                const oldState = this.getState(parsed.target)
+                if (Actions.includes(parsed.action)) {
+                    if (
+                        this.updateStore(parsed.action, parsed.target, args[0])
+                    ) {
+                        this.event.emit(
+                            this.stringifyChannel({
+                                target: parsed.target,
+                                event: 'change'
+                            }),
+                            this.ifClone(this.store[parsed.target]),
+                            oldState
+                        )
+                    }
+                } else {
+                    if (!this.actions[parsed.action]) {
+                        throw new Error(UNKNOWN_ACTION_MSG(parsed.action))
+                    }
+                    this.actions[parsed.action].call(
+                        this,
+                        parsed.target,
+                        ...args
                     )
                 }
             } else if (this.channels.includes(channel)) {
@@ -121,6 +137,8 @@ export default class MotX {
             } else {
                 throw new Error(UNKNOWN_CHANNEL_MSG(channel))
             }
+            this.hooks.didPublish &&
+                this.hooks.didPublish.call(this, channel, args)
         }
     }
 
@@ -155,14 +173,14 @@ export default class MotX {
     protected checkFieldName(fieldName) {
         if (typeof this.store[fieldName] === 'undefined') {
             throw new Error(
-                `[MotX] field name should be one of ${Object.keys(
+                `[MotX] unknown field name: ${Object.keys(
                     this.store
                 )}, ${DEFAULT_FIELD_ERR_MSG}`
             )
         }
     }
 
-    protected updateStore(mutation: string, fieldName: string, newState: any) {
+    protected updateStore(action: string, fieldName: string, newState: any) {
         this.checkFieldName(fieldName)
         if (typeof newState === 'undefined') {
             throw new Error(NEW_STATE_UNDEFINED_ERR_MSG)
@@ -179,7 +197,7 @@ export default class MotX {
         if (typeof newStat === 'undefined') {
             return false
         }
-        switch (mutation) {
+        switch (action) {
             case 'set':
                 this.store[fieldName] = this.ifClone(newStat)
                 break
@@ -208,11 +226,11 @@ export default class MotX {
         this.pipes[pipeName](JSON.stringify({ channel, args }))
     }
 
-    protected stringifyChannel({ mutation, fieldName, event, channel }: any) {
-        if (mutation) {
-            return `${mutation}:${fieldName}`
+    protected stringifyChannel({ action, target, event, channel }: any) {
+        if (action) {
+            return `${action}:${target}`
         } else if (event) {
-            return `${fieldName}@${event}`
+            return `${target}@${event}`
         } else {
             return channel
         }
@@ -221,9 +239,9 @@ export default class MotX {
     protected parseChannel(cnn: string) {
         const [
             matched,
-            hasMutation,
-            mutation,
-            fieldName,
+            hasAction,
+            action,
+            target,
             hasPipe,
             pipeName
         ]: string[] = CHANNEL_PARSE_REG.exec(cnn) || []
@@ -231,22 +249,16 @@ export default class MotX {
             throw new Error(`[MotX] illegal channel: ${cnn}`)
         }
 
-        if (mutation && !Mutation.includes(mutation)) {
-            throw new Error(
-                `[MotX] illegal mutation: ${mutation}, should be one of ${Mutation}`
-            )
-        }
-
-        if (hasMutation) {
+        if (hasAction) {
             return {
                 pipeName,
-                mutation,
-                fieldName
+                action,
+                target
             }
         } else {
             return {
                 pipeName,
-                channel: fieldName
+                channel: target
             }
         }
     }
@@ -265,21 +277,25 @@ const CHANNEL_VALID_REG = /[\w\-_]+/
 const EVENT_CHANNEL_VALID_REG = /[\w\-_]+\s*\@\s*[\w\-_]+/
 const CHANNEL_PARSE_REG = /\s*(([\w\-_\d\.]+)\s*\:)?\s*([\w\-_\d\.]+)\s*(\>\>\s*([\w\-_\d\.\*]+))?/
 
-const Mutation = ['set', 'merge']
+// 内置
+const Actions = ['set', 'merge']
 
 const DEFAULT_FIELD_ERR_MSG =
     'you should define the fields of store when instantiate MotX'
 const NEW_STATE_UNDEFINED_ERR_MSG = '[MotX] new state should not be undefined'
 const UNKNOWN_CHANNEL_MSG = (channel) =>
     `[MotX] unknown channel: ${channel}, please register with options.channels before using it`
-
+const UNKNOWN_ACTION_MSG = (action) =>
+    `[MotX] unknown action: ${action}, please register with options.actions before using it`
 const INVALID_REGISTER_CHANNEL_ERR_MSG = (channel) =>
     `[MotX] invalid channel: ${channel}, please check for /[\w\-_]+/`
+
 declare type Store = { [fieldName: string]: State }
 declare type State = any
 
 declare interface Hooks {
     willPublish?(channel: string, args: any[]): boolean
+    didPublish?(channel: string, args: any[]): void
     willSetState?(
         fieldName: string,
         newState: State,
@@ -299,9 +315,14 @@ declare interface MotXOptions {
     pipes?: { [pipeName: string]: Pipe }
     isolate?: boolean
     channels?: string[]
+    actions?: { [actionName: string]: Action }
 }
 declare interface Pipe {
     (jsonStringifyed: string): void
+}
+
+declare interface Action {
+    (target: string, ...args: any[]): void
 }
 
 declare interface Handler {

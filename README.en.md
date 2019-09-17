@@ -1,6 +1,6 @@
 # MotX
 
-一个基于中介者模式实现的轻量级应用状态传递和存储的工具，并为多进程或封闭模块之间的通讯问题提供高效的解决方案
+A lightweight application state transfer and storage tool based on the mediator pattern and provides efficient solutions to communication problems between multiple processes or closed modules
 
 ## Start
 
@@ -10,55 +10,53 @@
     // #############################################
     // worker process
     import MotX from 'motx'
+
     const motx = new MotX({
-        // 使用存储状态前先定义存储字段
+        // define the storage fields before using it
         store: {
             bean: { count: 1 }
-        },
-        // 注册频道
-        channels:[
-            // 用户通知更改bean数量
-            'change-count'
-        ]
+        }
     })
 
-
-
-    motx.subscribe('change-count', (count)=>{
-        // 发布内置特定格式的channel，`set:${fieldName}` 和 `merge:${fieldName}`，可更新store状态
-        // 更新后，会自动发布 `${被更新字段名}@change` 状态变更消息
-        motx.publish('set:bean', {count})
-    })
-
-    // 订阅 bean 字段的状态变更消息，无需注册
-    motx.subscribe('bean@change', (newState)=>{
+    motx.subscribe('bean:change', (newState)=>{
         console.log(newState.count) // 2
     })
 
+    motx.subscribe('change-count', (count)=>{
+        // Publish channels with `set:${fieldName}` or `merge:${fieldName}` to update the store
+        // After the update, it will publish the `${fieldName}@change` message automatically
+        motx.publish('set:bean', {count})
+    })
+
     motx.publish('change-count', 2)
+
     console.log(motx.getState('bean').count) // 2
 
-    // 接收来自master process的通过motx的pipe传送过来的字符串消息，并注入到当前motx对象，当前motx将会发布相应消息
+    // Receive message that transmitted through motx's pipes from the master process
     process.on('message', (message)=>{
         motx.onReceive(message)
     })
 
+
     //#################################################
     // master process
     import MotX from 'motx'
+
     const worker = ... // worker handler
+
     const motx = new MotX({
+        store: {},
         pipes:{
-            // 定义 worker 数据传送管道
             worker(jsonStringifyed) {
                 // 向 worker process 发送motx消息json字符串
                 worker.send(jsonStringifyed)
             }
         }
     })
+
     // 'channel >> pipeName' or 'set:bean >> pipeName'
-    // 发布的消息将通过 worker 管道传送到 worker 进程，传入 worker 进程的 motx.onRecieve 触发发布消息
-    motx.publish('change-count >> worker')
+    // the publish action will apply to the motx instance in worker process
+    motx.publish('worker#change-count')
 
 ```
 
@@ -66,21 +64,13 @@
 
 ### Mediator
 
-MotX 基于中介者模式实现消息发布和订阅机制，实现组件间松耦合通讯，订阅和发布都基于特定频道(channel), `publish(channel, data1, data2, ...)` `subscribe(channel, data1, data2, ...)`
-
-为了更好地理解与维护这些 channel，MotX 做了一个限制，需要先注册 channel 才能订阅
-
-推荐在注册 channel 的时候，使用注释描述清楚该 channel 的作用及注意要点
-
-MotX 有两种特殊的不需要注册的 channel：更改状态 channel、状态字段变更 channel
+MotX 基于中介者模式实现消息发布和订阅机制，实现组件间松耦合通讯
 
 ### Store & State
 
 MotX 支持缓存全局应用状态，store 用于存储状态树数据，state 是 store 某字段的数据当前状态，默认进行数据引用隔离
 
-通过 getState 方法获得指定字段的 state，通过 setState 或 motx.publish(`set:${fieldName}`, newState)
-
-注：普通的 channel 发布的数据不会流入 store
+通过 getState 方法获得指定字段的 state，通过 setState 或 motx.publish(`set:字段名`, newState)
 
 ### Hooks
 
@@ -93,8 +83,6 @@ Motx 通过 pipe 联通多个进程或多个隔离模块，实现多进程或多
 ## API
 
 ### Options
-
-所有参数都是可选参数
 
 -   `[store]` 定义存储状态字段和初始数据
 

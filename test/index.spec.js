@@ -1,6 +1,37 @@
 const MotX = require('../dist').default
 
 describe('Motx', () => {
+    describe('actions', () => {
+        it('action push', () => {
+            return new Promise((done) => {
+                let motx = new MotX({
+                    store: { list: [] },
+                    actions: {
+                        push(target, item) {
+                            const oldState = this.getState(target)
+                            if (!Array.isArray(oldState)) {
+                                throw new Error(
+                                    `[MotX] push action need a target type of Array`
+                                )
+                            }
+                            this.store.list.push(item)
+                            this.event.emit(
+                                `${target}@change`,
+                                this.getState(target),
+                                oldState
+                            )
+                        }
+                    }
+                })
+                motx.subscribe('list@change', (newState, oldState) => {
+                    if (newState.length === 1 && oldState.length === 0) {
+                        done()
+                    }
+                })
+                motx.publish('push:list', { name: 'bean' })
+            })
+        })
+    })
     describe('isolate', () => {
         it('isolate', () => {
             return new Promise((done) => {
@@ -203,6 +234,29 @@ describe('Motx', () => {
                 })
                 motx.publish('channel', false)
                 i === 0 && done()
+            })
+        })
+    })
+    describe('hooks.didPublish', () => {
+        it('did', () => {
+            let i = 0
+            let motx = new MotX({
+                store: {
+                    fvck: false
+                },
+                channels: ['channel'],
+                hooks: {
+                    didPublish(channel, [count]) {
+                        i += count
+                    }
+                }
+            })
+            return new Promise((done) => {
+                motx.subscribe('channel', (count) => {
+                    i += count
+                })
+                motx.publish('channel', 100)
+                i === 200 && done()
             })
         })
     })
