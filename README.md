@@ -6,7 +6,9 @@
 
 `npm i motx --save`
 
-```javascript
+内置 TypeScript 声明文件
+
+```typescript
     // #############################################
     // worker process
     import MotX from 'motx'
