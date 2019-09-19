@@ -121,10 +121,17 @@ MotXOptions {
     -   `didPublish?(channel: string, args: any[]): void` 发布之后执行
     -   `willSetState?(fieldName: string, newState: State, isolate: boolean, store: Store): State | undefined;` 更改 store 数据前执行，返回非 undefined 数据可作为变更数据，返回 undefined 则停止更改数据
     -   `didSetState?(fieldName: string, newState: State, isolate: boolean, store?: Store): void` 更改 store 数据后执行
--   `pipes`: 定义向其他进程或隔离模块传送数据的方式
+-   `pipes:{[pipeName: string]: (jsonStringifyed: string): void}`: 定义向其他进程或隔离模块传送数据的方式
     > 发布的 channel 前加上 pipeName# 即可向该管道传送经过`JSON.stringify` 的 publish 相关数据，使 publish 动作应用在目标进程或隔离模块
--   `channels` 注册频道
--   `actions` 注册全局 action
+-   `channels: string[]` 注册频道
+-   `actions:{[actionName: string]: (target: string, ...args: any[]): void}` 注册全局 action
+
+    > 内置两个更新 store 的 action，支持 `set` 和 `merge` 两个动作
+    >
+    > -   `set` 设置指定字段的值，如：`motx.publish('set:userInfo', {username: 'tom'})`
+    > -   `merge` 使用 assign 的方式混合新旧对象，如：`motx.publish('set:userInfo', {age: 16})`
+
+    > 触发 store 变更后，会自动发布变更字段消息，格式为变更字段名后面接`:change`, 如 `userInfo:change`, 订阅回调会获得该字段变更前后两个状态参数，newState 和 oldState
 
 ### Methods
 
@@ -132,12 +139,6 @@ MotXOptions {
 
     > 发布消息，传递数据，支持多个参数
 
-    > 支持变更 `store` 的消息，支持 `set` 和 `merge` 两个动作
-    >
-    > -   `set` 设置指定字段的值，如：`motx.publish('set:userInfo', {username: 'tom'})`
-    > -   `merge` 使用 assign 的方式混合新旧对象，如：`motx.publish('set:userInfo', {age: 16})`
-
-    > 触发 store 变更后，会自动发布变更字段消息，格式为变更字段名后面接`:change`, 如 `userInfo:change`, 订阅回调会获得该字段变更前后两个状态参数，newState 和 oldState
 
     > 支持向其他进程发布消息，如：
     >
@@ -157,7 +158,3 @@ MotXOptions {
     > 当前进程或隔离模块接收到其他进程或隔离模块通过 pipe 发送来的数据后，需要执行该方法并将 json 字符串数据传入
 -   `dispose()`
     > 注销内置对象，释放内存
-
-## todo
-
--   支持自定义动作

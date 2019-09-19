@@ -72,11 +72,15 @@ MotX 支持缓存全局应用状态，store 用于存储状态树数据，state 
 
 通过 getState 方法获得指定字段的 state，通过 setState 或 motx.publish(`set:字段名`, newState)
 
+### Actions
+
+与推动状态流的 action 不一样，是 motx 中介的能力拓展，只会被中介接收
+
 ### Hooks
 
 MotX 作为 '中介'，提供三个可以改变发布与更新缓存状态默认流程的钩子，让你可以灵活拓展 '中介' 的能力
 
-### Pipe
+### Pipes
 
 Motx 通过 pipe 联通多个进程或多个隔离模块，实现多进程或多隔离模块之间相互发布消息，pipe 需要你基于具体应用场景去定义如何传送 motx 消息字符串数据
 
