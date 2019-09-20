@@ -4,10 +4,12 @@ export default class MotX {
     protected event: EventEmitter
     protected store: Store
     protected hooks: Hooks
-    protected pipes: { [pipeName: string]: Pipe }
+    protected pipes: { [pipeName: string]: (jsonStringifyed: string) => void }
     protected isolate: boolean
     protected channels: string[]
-    protected actions: { [actionName: string]: Action }
+    protected actions: {
+        [actionName: string]: (target: string, ...args: any[]) => void
+    }
 
     /**
      * constructor
@@ -108,11 +110,11 @@ export default class MotX {
                     )
                 }
             } else if (parsed.target && parsed.action) {
-                const oldState = this.getState(parsed.target)
                 if (Actions.includes(parsed.action)) {
                     if (
                         this.updateStore(parsed.action, parsed.target, args[0])
                     ) {
+                        const oldState = this.getState(parsed.target)
                         this.event.emit(
                             this.stringifyChannel({
                                 target: parsed.target,
@@ -142,7 +144,7 @@ export default class MotX {
         }
     }
 
-    public subscribe(channel: string, handler: Handler) {
+    public subscribe(channel: string, handler: (...args: any[]) => void) {
         if (
             this.channels.includes(channel) ||
             EVENT_CHANNEL_VALID_REG.test(channel)
@@ -153,7 +155,7 @@ export default class MotX {
         }
     }
 
-    public unsubscribe(channel: string, handler?: Handler) {
+    public unsubscribe(channel: string, handler?: (...args: any[]) => void) {
         if (
             this.channels.includes(channel) ||
             EVENT_CHANNEL_VALID_REG.test(channel)
@@ -273,9 +275,9 @@ export default class MotX {
     }
 }
 
-const CHANNEL_VALID_REG = /[\w\-_]+/
-const EVENT_CHANNEL_VALID_REG = /[\w\-_]+\s*\@\s*[\w\-_]+/
-const CHANNEL_PARSE_REG = /\s*(([\w\-_\d\.]+)\s*\:)?\s*([\w\-_\d\.]+)\s*(\>\>\s*([\w\-_\d\.\*]+))?/
+const CHANNEL_VALID_REG = /[\w\-_\/\\\.]+/
+const EVENT_CHANNEL_VALID_REG = /[\w\-_\/\\\.]+\s*\@\s*[\w\-_\/\\\.]+/
+const CHANNEL_PARSE_REG = /\s*(([\w\-_\.]+)\s*\:)?\s*([\w\-_\/\\\.]+)\s*(\>\>\s*([\w\-_\d\*]+))?/
 
 // 内置
 const Actions = ['set', 'merge']
@@ -290,10 +292,10 @@ const UNKNOWN_ACTION_MSG = (action) =>
 const INVALID_REGISTER_CHANNEL_ERR_MSG = (channel) =>
     `[MotX] invalid channel: ${channel}, please check for /[\w\-_]+/`
 
-declare type Store = { [fieldName: string]: State }
-declare type State = any
+export type Store = { [fieldName: string]: State }
+export type State = any
 
-declare interface Hooks {
+export interface Hooks {
     willPublish?(channel: string, args: any[]): boolean
     didPublish?(channel: string, args: any[]): void
     willSetState?(
@@ -309,26 +311,15 @@ declare interface Hooks {
         store?: Store
     ): void
 }
-declare interface MotXOptions {
-    store: Store
+export interface MotXOptions {
+    store?: Store
     hooks?: Hooks
-    pipes?: { [pipeName: string]: Pipe }
+    pipes?: { [pipeName: string]: (jsonStringifyed: string) => void }
     isolate?: boolean
     channels?: string[]
-    actions?: { [actionName: string]: Action }
-}
-declare interface Pipe {
-    (jsonStringifyed: string): void
+    actions?: { [actionName: string]: (target: string, ...args: any[]) => void }
 }
 
-declare interface Action {
-    (target: string, ...args: any[]): void
-}
-
-declare interface Handler {
-    (...args: any[]): void
-}
-
-declare interface PlainObject {
+export interface PlainObject {
     [key: string]: any
 }
