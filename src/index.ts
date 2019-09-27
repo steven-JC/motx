@@ -1,10 +1,14 @@
 import * as EventEmitter from 'eventemitter3'
 
+const MotXInstances: { [key: string]: MotX } = {}
+
 export default class MotX {
     protected event: EventEmitter
     protected store: Store
     protected hooks: Hooks
-    protected pipes: { [pipeName: string]: (jsonStringifyed: string) => void }
+    protected pipes: {
+        [pipeName: string]: (jsonStringifyed: string) => void
+    }
     protected isolate: boolean
     protected channels: string[]
     protected actions: {
@@ -17,6 +21,7 @@ export default class MotX {
      */
     constructor(options: MotXOptions) {
         const {
+            name,
             store = {},
             hooks = {},
             isolate = true,
@@ -24,6 +29,11 @@ export default class MotX {
             channels = [],
             actions = {}
         } = options
+
+        if (name) {
+            MotXInstances[name] = this
+        }
+
         this.event = new EventEmitter()
         this.isolate = isolate
         this.hooks = {
@@ -51,11 +61,29 @@ export default class MotX {
                 throw new Error(INVALID_REGISTER_CHANNEL_ERR_MSG(item))
             }
         })
+
         this.pipes = pipes
         this.actions = actions
 
         if (!store) throw new Error(`[MotX] ${DEFAULT_FIELD_ERR_MSG}`)
         this.store = this.ifClone(store) as Store
+    }
+
+    public pipe(pipeName): Pipe | Pipes {
+        if (pipeName === '*' || pipeName[0] === '!') {
+            const pipes = Object.values(this.pipes)
+            Object.values(MotXInstances).forEach((motx) => {
+                pipes.push((jsonStringifyed: string) => {
+                    motx.onReceive(jsonStringifyed)
+                })
+            })
+            return new Pipes(pipes)
+        } else {
+            if (!this.pipes[pipeName] && !MotXInstances[pipeName]) {
+                throw new Error(UNKNOWN_PIPE_NAME_MSG(pipeName))
+            }
+            return new Pipe(this.pipes[pipeName])
+        }
     }
 
     public onReceive(jsonStringifyed: string) {
@@ -95,12 +123,11 @@ export default class MotX {
             const parsed = this.parseChannel(channel)
             if (parsed.pipeName) {
                 if (parsed.pipeName === '*') {
-                    Object.keys(this.pipes).forEach((item) => {
-                        this.send(
-                            parsed.pipeName,
-                            this.stringifyChannel(parsed),
-                            args
-                        )
+                    ;[
+                        ...Object.keys(this.pipes),
+                        ...Object.keys(MotXInstances)
+                    ].forEach((item) => {
+                        this.send(item, this.stringifyChannel(parsed), args)
                     })
                 } else {
                     this.send(
@@ -222,10 +249,15 @@ export default class MotX {
     }
 
     protected send(pipeName, channel, args: any[]) {
-        if (!this.pipes[pipeName]) {
-            throw new Error(`[MotX] the pipe is not found: ${pipeName}`)
+        if (!this.pipes[pipeName] && !MotXInstances[pipeName]) {
+            throw new Error(UNKNOWN_PIPE_NAME_MSG(pipeName))
         }
-        this.pipes[pipeName](JSON.stringify({ channel, args }))
+        if (this.pipes[pipeName]) {
+            this.pipes[pipeName](JSON.stringify({ channel, args }))
+        }
+        if (MotXInstances[pipeName]) {
+            MotXInstances[pipeName].onReceive(JSON.stringify({ channel, args }))
+        }
     }
 
     protected stringifyChannel({ action, target, event, channel }: any) {
@@ -275,6 +307,50 @@ export default class MotX {
     }
 }
 
+class Pipe {
+    protected handlers: Function[]
+
+    constructor(pipeName: string, handlers: { [key: string]: Function }) {
+        if (pipeName === '*' || pipeName[0] === '!') {
+            this.handlers = Object.values(handlers)
+            Object.values(MotXInstances).forEach((motx) => {
+                this.handlers.push((jsonStringifyed: string) => {
+                    motx.onReceive(jsonStringifyed)
+                })
+            })
+        } else {
+            if (!handlers[pipeName] && !MotXInstances[pipeName]) {
+                throw new Error(UNKNOWN_PIPE_NAME_MSG(pipeName))
+            }
+            this.handlers = []
+            if (handlers[pipeName]) {
+                this.handlers.push(handlers[pipeName])
+            }
+            if (MotXInstances[pipeName]) {
+                this.handlers.push((jsonStringifyed: string) => {
+                    MotXInstances[pipeName].onReceive(jsonStringifyed)
+                })
+            }
+        }
+    }
+
+    public publish(channel: string, ...args: Function[]) {
+        this.send(channel, args)
+    }
+
+    public setState(fieldName: string, newState: State): void {
+        this.send(`set:${fieldName}`, [newState])
+    }
+
+    // public getState(fieldName: string): State {
+    //     return
+    // }
+
+    private send(channel, args) {
+        this.handler(JSON.stringify({ channel, args }))
+    }
+}
+
 const CHANNEL_VALID_REG = /[\w\-_\/\\\.]+/
 const EVENT_CHANNEL_VALID_REG = /[\w\-_\/\\\.]+\s*\@\s*[\w\-_\/\\\.]+/
 const CHANNEL_PARSE_REG = /\s*(([\w\-_\.]+)\s*\:)?\s*([\w\-_\/\\\.]+)\s*(\>\>\s*([\w\-_\d\*]+))?/
@@ -285,6 +361,8 @@ const Actions = ['set', 'merge']
 const DEFAULT_FIELD_ERR_MSG =
     'you should define the fields of store when instantiate MotX'
 const NEW_STATE_UNDEFINED_ERR_MSG = '[MotX] new state should not be undefined'
+const UNKNOWN_PIPE_NAME_MSG = (pipeName) =>
+    `[MotX] the pipe or the motx instance is not found: ${pipeName}`
 const UNKNOWN_CHANNEL_MSG = (channel) =>
     `[MotX] unknown channel: ${channel}, please register with options.channels before using it`
 const UNKNOWN_ACTION_MSG = (action) =>
@@ -312,6 +390,7 @@ export interface Hooks {
     ): void
 }
 export interface MotXOptions {
+    name?: string
     store?: Store
     hooks?: Hooks
     pipes?: { [pipeName: string]: (jsonStringifyed: string) => void }
