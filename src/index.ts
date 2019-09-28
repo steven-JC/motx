@@ -3,6 +3,7 @@ import * as EventEmitter from 'eventemitter3'
 const MotXInstances: { [key: string]: MotX } = {}
 
 export default class MotX {
+    protected name: string = ''
     protected event: EventEmitter
     protected store: Store
     protected hooks: Hooks
@@ -32,6 +33,7 @@ export default class MotX {
 
         if (name) {
             MotXInstances[name] = this
+            this.name = name
         }
 
         this.event = new EventEmitter()
@@ -69,21 +71,9 @@ export default class MotX {
         this.store = this.ifClone(store) as Store
     }
 
-    public pipe(pipeName): Pipe | Pipes {
-        if (pipeName === '*' || pipeName[0] === '!') {
-            const pipes = Object.values(this.pipes)
-            Object.values(MotXInstances).forEach((motx) => {
-                pipes.push((jsonStringifyed: string) => {
-                    motx.onReceive(jsonStringifyed)
-                })
-            })
-            return new Pipes(pipes)
-        } else {
-            if (!this.pipes[pipeName] && !MotXInstances[pipeName]) {
-                throw new Error(UNKNOWN_PIPE_NAME_MSG(pipeName))
-            }
-            return new Pipe(this.pipes[pipeName])
-        }
+    public pipe(rule: string): Pipe {
+        const handlers: Function[] = this.filterPipes(rule)
+        return new Pipe(handlers)
     }
 
     public onReceive(jsonStringifyed: string) {
@@ -91,25 +81,26 @@ export default class MotX {
         this.publish(channel, ...args)
     }
 
-    public getState(fieldName: string): State {
+    public getState(fieldName: string, isolate?: boolean): State {
         this.checkFieldName(fieldName)
-        return this.ifClone(this.store[fieldName])
+        return this.ifClone(this.store[fieldName], isolate)
     }
 
     public setState(
         fieldName: string,
         newState: State,
+        isolate?: boolean,
         silent?: boolean
     ): void {
         this.checkFieldName(fieldName)
         const oldState = this.ifClone(this.store[fieldName], true)
-        if (this.updateStore('set', fieldName, newState) && !silent) {
+        if (this.updateStore('set', fieldName, newState, isolate) && !silent) {
             this.event.emit(
                 this.stringifyChannel({
                     target: fieldName,
                     event: 'change'
                 }),
-                newState,
+                this.ifClone(newState, isolate),
                 oldState
             )
         }
@@ -121,27 +112,17 @@ export default class MotX {
             !!this.hooks.willPublish.call(this, channel, args)
         ) {
             const parsed = this.parseChannel(channel)
-            if (parsed.pipeName) {
-                if (parsed.pipeName === '*') {
-                    ;[
-                        ...Object.keys(this.pipes),
-                        ...Object.keys(MotXInstances)
-                    ].forEach((item) => {
-                        this.send(item, this.stringifyChannel(parsed), args)
-                    })
-                } else {
-                    this.send(
-                        parsed.pipeName,
-                        this.stringifyChannel(parsed),
-                        args
-                    )
-                }
-            } else if (parsed.target && parsed.action) {
+            if (parsed.target && parsed.action) {
                 if (Actions.includes(parsed.action)) {
+                    const oldState = this.getState(parsed.target)
                     if (
-                        this.updateStore(parsed.action, parsed.target, args[0])
+                        this.updateStore(
+                            parsed.action,
+                            parsed.target,
+                            args[0],
+                            this.isolate
+                        )
                     ) {
-                        const oldState = this.getState(parsed.target)
                         this.event.emit(
                             this.stringifyChannel({
                                 target: parsed.target,
@@ -164,7 +145,7 @@ export default class MotX {
             } else if (this.channels.includes(channel)) {
                 this.event.emit(channel, ...args)
             } else {
-                throw new Error(UNKNOWN_CHANNEL_MSG(channel))
+                throw new Error(UNKNOWN_CHANNEL_MSG(this.name, channel))
             }
             this.hooks.didPublish &&
                 this.hooks.didPublish.call(this, channel, args)
@@ -178,7 +159,7 @@ export default class MotX {
         ) {
             this.event.on(channel, handler)
         } else {
-            throw new Error(UNKNOWN_CHANNEL_MSG(channel))
+            throw new Error(UNKNOWN_CHANNEL_MSG(this.name, channel))
         }
     }
 
@@ -189,7 +170,7 @@ export default class MotX {
         ) {
             this.event.off(channel, handler)
         } else {
-            throw new Error(UNKNOWN_CHANNEL_MSG(channel))
+            throw new Error(UNKNOWN_CHANNEL_MSG(this.name, channel))
         }
     }
 
@@ -197,6 +178,9 @@ export default class MotX {
         ;(this.store as any) = null
         this.event.removeAllListeners()
         ;(this.event as any) = null
+        if (this.name) {
+            delete MotXInstances[this.name]
+        }
     }
 
     protected checkFieldName(fieldName) {
@@ -209,7 +193,12 @@ export default class MotX {
         }
     }
 
-    protected updateStore(action: string, fieldName: string, newState: any) {
+    protected updateStore(
+        action: string,
+        fieldName: string,
+        newState: any,
+        isolate?: boolean
+    ) {
         this.checkFieldName(fieldName)
         if (typeof newState === 'undefined') {
             throw new Error(NEW_STATE_UNDEFINED_ERR_MSG)
@@ -228,12 +217,12 @@ export default class MotX {
         }
         switch (action) {
             case 'set':
-                this.store[fieldName] = this.ifClone(newStat)
+                this.store[fieldName] = this.ifClone(newStat, isolate)
                 break
             case 'merge':
                 this.store[fieldName] = Object.assign(
                     this.store[fieldName],
-                    this.ifClone(newStat)
+                    this.ifClone(newStat, isolate)
                 )
                 break
         }
@@ -248,18 +237,6 @@ export default class MotX {
         return true
     }
 
-    protected send(pipeName, channel, args: any[]) {
-        if (!this.pipes[pipeName] && !MotXInstances[pipeName]) {
-            throw new Error(UNKNOWN_PIPE_NAME_MSG(pipeName))
-        }
-        if (this.pipes[pipeName]) {
-            this.pipes[pipeName](JSON.stringify({ channel, args }))
-        }
-        if (MotXInstances[pipeName]) {
-            MotXInstances[pipeName].onReceive(JSON.stringify({ channel, args }))
-        }
-    }
-
     protected stringifyChannel({ action, target, event, channel }: any) {
         if (action) {
             return `${action}:${target}`
@@ -269,32 +246,78 @@ export default class MotX {
             return channel
         }
     }
-    //`channel >> pipeName`    ` set:fieldName >> pipeName`    `merge:fieldName >> pipeName`
+
     protected parseChannel(cnn: string) {
-        const [
-            matched,
-            hasAction,
-            action,
-            target,
-            hasPipe,
-            pipeName
-        ]: string[] = CHANNEL_PARSE_REG.exec(cnn) || []
+        const [matched, hasAction, action, target]: string[] =
+            CHANNEL_PARSE_REG.exec(cnn) || []
         if (!matched) {
             throw new Error(`[MotX] illegal channel: ${cnn}`)
         }
 
         if (hasAction) {
             return {
-                pipeName,
                 action,
                 target
             }
         } else {
             return {
-                pipeName,
                 channel: target
             }
         }
+    }
+
+    protected filterPipes(rule: string) {
+        const handlers: Function[] = []
+        if (rule === '*' || rule[0] === '!') {
+            let excludes: string[] = []
+            if (rule[0] === '!') {
+                excludes = rule
+                    .substr(1)
+                    .split(',')
+                    .map((item) => item.trim())
+            }
+            Object.keys(this.pipes).forEach((key) => {
+                if (!excludes.includes(key)) {
+                    handlers.push(this.pipes[key])
+                }
+            })
+
+            Object.keys(MotXInstances).forEach((key) => {
+                if (!excludes.includes(key)) {
+                    handlers.push((jsonStringifyed: string) => {
+                        MotXInstances[key].onReceive(jsonStringifyed)
+                    })
+                }
+            })
+        } else if (rule.includes(',') || Array.isArray(rule)) {
+            const keys =
+                typeof rule === 'string'
+                    ? rule.split(',').map((item) => item.trim())
+                    : rule
+            keys.forEach((key) => {
+                if (this.pipes[key]) {
+                    handlers.push(this.pipes[key])
+                }
+                if (MotXInstances[key]) {
+                    handlers.push((jsonStringifyed: string) => {
+                        MotXInstances[key].onReceive(jsonStringifyed)
+                    })
+                }
+            })
+        } else {
+            if (!this.pipes[rule] && !MotXInstances[rule]) {
+                throw new Error(UNKNOWN_PIPE_NAME_MSG(rule))
+            }
+            if (this.pipes[rule]) {
+                handlers.push(this.pipes[rule])
+            }
+            if (MotXInstances[rule]) {
+                handlers.push((jsonStringifyed: string) => {
+                    MotXInstances[rule].onReceive(jsonStringifyed)
+                })
+            }
+        }
+        return handlers
     }
 
     protected ifClone(state: State | Store, isolate?: boolean): State | Store {
@@ -308,30 +331,10 @@ export default class MotX {
 }
 
 class Pipe {
-    protected handlers: Function[]
+    protected pipes: Function[]
 
-    constructor(pipeName: string, handlers: { [key: string]: Function }) {
-        if (pipeName === '*' || pipeName[0] === '!') {
-            this.handlers = Object.values(handlers)
-            Object.values(MotXInstances).forEach((motx) => {
-                this.handlers.push((jsonStringifyed: string) => {
-                    motx.onReceive(jsonStringifyed)
-                })
-            })
-        } else {
-            if (!handlers[pipeName] && !MotXInstances[pipeName]) {
-                throw new Error(UNKNOWN_PIPE_NAME_MSG(pipeName))
-            }
-            this.handlers = []
-            if (handlers[pipeName]) {
-                this.handlers.push(handlers[pipeName])
-            }
-            if (MotXInstances[pipeName]) {
-                this.handlers.push((jsonStringifyed: string) => {
-                    MotXInstances[pipeName].onReceive(jsonStringifyed)
-                })
-            }
-        }
+    constructor(pipes: Function[]) {
+        this.pipes = pipes
     }
 
     public publish(channel: string, ...args: Function[]) {
@@ -347,13 +350,16 @@ class Pipe {
     // }
 
     private send(channel, args) {
-        this.handler(JSON.stringify({ channel, args }))
+        const data = JSON.stringify({ channel, args })
+        this.pipes.forEach((pipe) => {
+            pipe(data)
+        })
     }
 }
 
 const CHANNEL_VALID_REG = /[\w\-_\/\\\.]+/
 const EVENT_CHANNEL_VALID_REG = /[\w\-_\/\\\.]+\s*\@\s*[\w\-_\/\\\.]+/
-const CHANNEL_PARSE_REG = /\s*(([\w\-_\.]+)\s*\:)?\s*([\w\-_\/\\\.]+)\s*(\>\>\s*([\w\-_\d\*]+))?/
+const CHANNEL_PARSE_REG = /\s*(([\w\-_\.]+)\s*\:)?\s*([\w\-_\/\\\.]+)\s*/
 
 // 内置
 const Actions = ['set', 'merge']
@@ -363,8 +369,10 @@ const DEFAULT_FIELD_ERR_MSG =
 const NEW_STATE_UNDEFINED_ERR_MSG = '[MotX] new state should not be undefined'
 const UNKNOWN_PIPE_NAME_MSG = (pipeName) =>
     `[MotX] the pipe or the motx instance is not found: ${pipeName}`
-const UNKNOWN_CHANNEL_MSG = (channel) =>
-    `[MotX] unknown channel: ${channel}, please register with options.channels before using it`
+const UNKNOWN_CHANNEL_MSG = (motxName, channel) =>
+    `[MotX] unknown channel: ${channel}${
+        motxName ? ' in ' + motxName : ''
+    }, please register with options.channels before using it`
 const UNKNOWN_ACTION_MSG = (action) =>
     `[MotX] unknown action: ${action}, please register with options.actions before using it`
 const INVALID_REGISTER_CHANNEL_ERR_MSG = (channel) =>

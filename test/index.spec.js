@@ -33,7 +33,7 @@ describe('Motx', () => {
         })
     })
     describe('isolate', () => {
-        it('isolate', () => {
+        it('options.isolate', () => {
             return new Promise((done) => {
                 const store = { bean: { count: 1 } }
                 let motx = new MotX({
@@ -50,7 +50,7 @@ describe('Motx', () => {
                 }
             })
         })
-        it('!isolate', () => {
+        it('options.!isolate', () => {
             return new Promise((done) => {
                 const store = { bean: { count: 1 } }
                 let motx = new MotX({
@@ -65,6 +65,67 @@ describe('Motx', () => {
                         motx.getState('bean') === state && done()
                     }
                 }
+            })
+        })
+
+        it('getState isolate', () => {
+            return new Promise((done) => {
+                const bean = {}
+                let motx = new MotX({
+                    store: { bean },
+                    isolate: false
+                })
+                const state1 = motx.getState('bean', true)
+                const state2 = motx.getState('bean', true)
+                if (state1 !== bean && state1 !== state2) done()
+            })
+        })
+        it('getState !isolate', () => {
+            return new Promise((done) => {
+                const bean = {}
+                let motx = new MotX({
+                    store: { bean },
+                    isolate: true
+                })
+                const state1 = motx.getState('bean', false)
+                const state2 = motx.getState('bean', false)
+                if (state1 === state2) done()
+            })
+        })
+
+        it('setState isolate', () => {
+            return new Promise((done) => {
+                const bean = {}
+                let motx = new MotX({
+                    store: { bean },
+                    isolate: false
+                })
+                let i = 0
+                motx.subscribe('bean@change', (state, old) => {
+                    if (bean === state || old === bean) {
+                        throw new Error('error in setState isolate')
+                    }
+                })
+                motx.setState('bean', bean, true)
+
+                done()
+            })
+        })
+
+        it('setState !isolate', () => {
+            return new Promise((done) => {
+                const bean = {}
+                let motx = new MotX({
+                    store: { bean },
+                    isolate: true
+                })
+                motx.subscribe('bean@change', (state, old) => {
+                    if (bean !== state || old === bean) {
+                        throw new Error('error in setState isolate')
+                    }
+                })
+                motx.setState('bean', bean, false)
+                if (motx.getState('bean', false) === bean) done()
             })
         })
     })
@@ -114,16 +175,24 @@ describe('Motx', () => {
                 motx.subscribe('bean@change', ({ count }) => {
                     i += count
                 })
-                motx.setState('bean', { count: 2 }, true)
+                motx.setState('bean', { count: 2 }, true, true)
                 i === 0 && done()
             })
         })
     })
-    describe('pipes & onReceive', () => {
-        it('publish(channel >> pipe)', () => {
+    describe('pipes & onReceive & name', () => {
+        let toDespose = []
+
+        afterEach(() => {
+            toDespose.forEach((item) => {
+                item.dispose()
+            })
+            toDespose = []
+        })
+
+        it('Pipe.publish', () => {
             return new Promise((done) => {
                 let motx = new MotX({
-                    store: {},
                     pipes: {
                         ns1(stringifyed) {
                             const { channel, args } = JSON.parse(stringifyed)
@@ -131,17 +200,194 @@ describe('Motx', () => {
                         }
                     }
                 })
-                motx.publish('channel >> ns1')
+                motx.pipe('ns1').publish('channel')
+                toDespose.push(motx)
             })
         })
 
         it('onReceive', () => {
             return new Promise((done) => {
-                let motx = new MotX({ store: {}, channels: ['channel'] })
+                let motx = new MotX({
+                    channels: ['channel']
+                })
                 motx.subscribe('channel', (arg1, arg2) => {
                     arg1 === 1 && arg2 === 2 && done()
                 })
                 motx.onReceive('{"channel":"channel","args":[1,2]}')
+                toDespose.push(motx)
+            })
+        })
+
+        it('pipes *', () => {
+            return new Promise((done) => {
+                let isOk = 0
+                let motx1 = new MotX({
+                    name: 'motx1',
+                    channels: ['channel'],
+                    pipes: {
+                        ns1(stringifyed) {
+                            const { channel, args } = JSON.parse(stringifyed)
+                            if (
+                                channel === 'channel' &&
+                                args[0] === 1 &&
+                                args[1] === 2
+                            ) {
+                                isOk++
+                                if (isOk === 3) {
+                                    done()
+                                }
+                            }
+                        },
+                        ns2(stringifyed) {
+                            const { channel, args } = JSON.parse(stringifyed)
+                            if (
+                                channel === 'channel' &&
+                                args[0] === 1 &&
+                                args[1] === 2
+                            ) {
+                                isOk++
+                                if (isOk === 3) {
+                                    done()
+                                }
+                            }
+                        }
+                    }
+                })
+                let motx2 = new MotX({
+                    name: 'motx2',
+                    channels: ['channel']
+                })
+                motx2.subscribe('channel', (arg1, arg2) => {
+                    if (arg1 === 1 && arg2 === 2) {
+                        isOk++
+                        if (isOk === 3) {
+                            done()
+                        }
+                    }
+                })
+                motx1.pipe('*').publish('channel', 1, 2)
+
+                toDespose.push(motx1, motx2)
+            })
+        })
+
+        it('pipes !ns2,motx1', () => {
+            return new Promise((done) => {
+                let isOk = 0
+                let motx1 = new MotX({
+                    name: 'motx1',
+                    channels: ['channel'],
+                    pipes: {
+                        ns1(stringifyed) {
+                            const { channel, args } = JSON.parse(stringifyed)
+                            if (
+                                channel === 'channel' &&
+                                args[0] === 1 &&
+                                args[1] === 2
+                            ) {
+                                isOk++
+                                setTimeout(() => {
+                                    if (isOk === 2) {
+                                        done()
+                                    }
+                                }, 10)
+                            }
+                        },
+                        ns2(stringifyed) {
+                            const { channel, args } = JSON.parse(stringifyed)
+                            if (
+                                channel === 'channel' &&
+                                args[0] === 1 &&
+                                args[1] === 2
+                            ) {
+                                throw new Error('Error in !ns2,motx1')
+                            }
+                        }
+                    }
+                })
+                let motx2 = new MotX({
+                    name: 'motx2',
+                    channels: ['channel']
+                })
+
+                motx2.subscribe('channel', (arg1, arg2) => {
+                    if (arg1 === 1 && arg2 === 2) {
+                        isOk++
+                        setTimeout(() => {
+                            if (isOk === 2) {
+                                done()
+                            }
+                        }, 10)
+                    }
+                })
+                motx1.subscribe('channel', (arg1, arg2) => {
+                    if (arg1 === 1 && arg2 === 2) {
+                        throw new Error('Error in !ns2,motx1')
+                    }
+                })
+                motx1.pipe('!ns2,motx1').publish('channel', 1, 2)
+
+                toDespose.push(motx1, motx2)
+            })
+        })
+
+        it('pipes ns2,motx1', () => {
+            return new Promise((done) => {
+                let isOk = 0
+                let motx1 = new MotX({
+                    name: 'motx1',
+                    channels: ['channel'],
+                    pipes: {
+                        ns1(stringifyed) {
+                            const { channel, args } = JSON.parse(stringifyed)
+                            if (
+                                channel === 'channel' &&
+                                args[0] === 1 &&
+                                args[1] === 2
+                            ) {
+                                isOk++
+                                setTimeout(() => {
+                                    if (isOk === 2) {
+                                        done()
+                                    }
+                                }, 10)
+                            }
+                        },
+                        ns2(stringifyed) {
+                            const { channel, args } = JSON.parse(stringifyed)
+                            if (
+                                channel === 'channel' &&
+                                args[0] === 1 &&
+                                args[1] === 2
+                            ) {
+                                throw new Error('Error in !ns2,motx1')
+                            }
+                        }
+                    }
+                })
+                let motx2 = new MotX({
+                    name: 'motx2',
+                    channels: ['channel']
+                })
+
+                motx2.subscribe('channel', (arg1, arg2) => {
+                    if (arg1 === 1 && arg2 === 2) {
+                        isOk++
+                        setTimeout(() => {
+                            if (isOk === 2) {
+                                done()
+                            }
+                        }, 10)
+                    }
+                })
+                motx1.subscribe('channel', (arg1, arg2) => {
+                    if (arg1 === 1 && arg2 === 2) {
+                        throw new Error('Error in !ns2,motx1')
+                    }
+                })
+                motx1.pipe('ns1,motx2').publish('channel', 1, 2)
+
+                toDespose.push(motx1, motx2)
             })
         })
     })
