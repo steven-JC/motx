@@ -2,6 +2,8 @@ import * as EventEmitter from 'eventemitter3'
 
 const MotXInstances: { [key: string]: MotX } = {}
 
+let AutoRunTarget: Function | null = null
+
 export default class MotX {
     protected name: string = ''
     protected event: EventEmitter
@@ -67,8 +69,7 @@ export default class MotX {
         this.pipes = pipes
         this.actions = actions
 
-        if (!store) throw new Error(`[MotX] ${DEFAULT_FIELD_ERR_MSG}`)
-        this.store = this.ifClone(store) as Store
+        this.store = new Store(JSON.parse(JSON.stringify(store)), this.isolate)
     }
 
     public pipe(rule: string): Pipe {
@@ -81,9 +82,19 @@ export default class MotX {
         this.publish(channel, ...args)
     }
 
+    public autorun(
+        handler: (rootState: { [key: string]: any }, isInitRun: boolean) => {}
+    ): RemoveAutorunFunction {
+        AutoRunTarget = handler
+        handler(this.store.reactData, true)
+        AutoRunTarget = null
+        return () => {
+            this.store.removeAutorun(handler)
+        }
+    }
+
     public getState(fieldName: string, isolate?: boolean): State {
-        this.checkFieldName(fieldName)
-        return this.ifClone(this.store[fieldName], isolate)
+        return this.store.getState(fieldName, isolate)
     }
 
     public setState(
@@ -92,17 +103,43 @@ export default class MotX {
         isolate?: boolean,
         silent?: boolean
     ): void {
-        this.checkFieldName(fieldName)
-        const oldState = this.ifClone(this.store[fieldName], true)
-        if (this.updateStore('set', fieldName, newState, isolate) && !silent) {
-            this.event.emit(
-                this.stringifyChannel({
-                    target: fieldName,
-                    event: 'change'
-                }),
-                this.ifClone(newState, isolate),
-                oldState
+        if (typeof newState === 'undefined') {
+            throw new Error(NEW_STATE_UNDEFINED_ERR_MSG)
+        }
+        const newStat: State | undefined =
+            this.hooks.willSetState &&
+            this.hooks.willSetState.call(
+                this,
+                fieldName,
+                newState,
+                this.isolate,
+                this.store
             )
+
+        if (typeof newStat !== 'undefined') {
+            const oldState = this.store.getState(fieldName, isolate)
+
+            this.store.setState(fieldName, newStat, isolate, silent)
+
+            if (!silent) {
+                this.event.emit(
+                    this.stringifyChannel({
+                        target: fieldName,
+                        event: 'change'
+                    }),
+                    this.store.ifClone(newStat, isolate),
+                    oldState
+                )
+            }
+
+            this.hooks.didSetState &&
+                this.hooks.didSetState.call(
+                    this,
+                    fieldName,
+                    newStat,
+                    this.isolate,
+                    this.store
+                )
         }
     }
 
@@ -113,25 +150,8 @@ export default class MotX {
         ) {
             const parsed = this.parseChannel(channel)
             if (parsed.target && parsed.action) {
-                if (Actions.includes(parsed.action)) {
-                    const oldState = this.getState(parsed.target)
-                    if (
-                        this.updateStore(
-                            parsed.action,
-                            parsed.target,
-                            args[0],
-                            this.isolate
-                        )
-                    ) {
-                        this.event.emit(
-                            this.stringifyChannel({
-                                target: parsed.target,
-                                event: 'change'
-                            }),
-                            this.ifClone(this.store[parsed.target]),
-                            oldState
-                        )
-                    }
+                if (parsed.action === 'setState') {
+                    this.setState(parsed.target, args[0])
                 } else {
                     if (!this.actions[parsed.action]) {
                         throw new Error(UNKNOWN_ACTION_MSG(parsed.action))
@@ -181,60 +201,6 @@ export default class MotX {
         if (this.name) {
             delete MotXInstances[this.name]
         }
-    }
-
-    protected checkFieldName(fieldName) {
-        if (typeof this.store[fieldName] === 'undefined') {
-            throw new Error(
-                `[MotX] unknown field name: ${Object.keys(
-                    this.store
-                )}, ${DEFAULT_FIELD_ERR_MSG}`
-            )
-        }
-    }
-
-    protected updateStore(
-        action: string,
-        fieldName: string,
-        newState: any,
-        isolate?: boolean
-    ) {
-        this.checkFieldName(fieldName)
-        if (typeof newState === 'undefined') {
-            throw new Error(NEW_STATE_UNDEFINED_ERR_MSG)
-        }
-        const newStat: State | undefined =
-            this.hooks.willSetState &&
-            this.hooks.willSetState.call(
-                this,
-                fieldName,
-                newState,
-                this.isolate,
-                this.store
-            )
-        if (typeof newStat === 'undefined') {
-            return false
-        }
-        switch (action) {
-            case 'set':
-                this.store[fieldName] = this.ifClone(newStat, isolate)
-                break
-            case 'merge':
-                this.store[fieldName] = Object.assign(
-                    this.store[fieldName],
-                    this.ifClone(newStat, isolate)
-                )
-                break
-        }
-        this.hooks.didSetState &&
-            this.hooks.didSetState.call(
-                this,
-                fieldName,
-                newStat,
-                this.isolate,
-                this.store
-            )
-        return true
     }
 
     protected stringifyChannel({ action, target, event, channel }: any) {
@@ -319,8 +285,72 @@ export default class MotX {
         }
         return handlers
     }
+}
 
-    protected ifClone(state: State | Store, isolate?: boolean): State | Store {
+class Store {
+    public reactData: { [key: string]: any } = {}
+    public state: { [key: string]: any }
+    public isolate: boolean = true
+    protected observers: { [key: string]: Observer } = {}
+    constructor(state: { [key: string]: any }, isolate: boolean) {
+        this.state = state
+        this.isolate = isolate
+        this.observe()
+    }
+    public setState(
+        key: string,
+        newState: State,
+        isolate?: boolean,
+        silent?: boolean
+    ): void {
+        this.checkFieldName(key)
+        this.state[key] = this.ifClone(newState, isolate)
+        if (!silent) {
+            this.observers[key].deps.forEach((autorun) => {
+                AutoRunTarget = autorun
+                autorun(this.reactData, false)
+                AutoRunTarget = null
+            })
+        }
+    }
+    public getState(key, isolate) {
+        this.checkFieldName(key)
+        return this.ifClone(this.state[key], isolate)
+    }
+    protected observe() {
+        Object.keys(this.state).forEach((key) => {
+            const observer = new Observer()
+            this.observers[key] = observer
+            Object.defineProperty(this.reactData, key, {
+                get() {
+                    if (AutoRunTarget) {
+                        if (!observer.deps.includes(AutoRunTarget))
+                            observer.deps.push(AutoRunTarget)
+                    }
+                    return this.ifClone(this.store[key])
+                },
+                set(value) {
+                    throw new Error(CANNOT_SET_STATE_DIRECTLY(key))
+                },
+                enumerable: true,
+                configurable: false
+            })
+        })
+    }
+
+    public removeAutorun(autorun) {
+        Object.values(this.observers).forEach(({ deps }: Observer) => {
+            const index = deps.indexOf(autorun)
+            if (index > -1) {
+                deps.slice(index, 1)
+            }
+        })
+        if (AutoRunTarget === autorun) {
+            AutoRunTarget = null
+        }
+    }
+
+    public ifClone(state: State | Store, isolate?: boolean): State | Store {
         if (typeof isolate === 'undefined' ? !this.isolate : !isolate) {
             return state
         }
@@ -328,8 +358,22 @@ export default class MotX {
             return JSON.parse(JSON.stringify(state))
         } else return state
     }
+
+    public checkFieldName(key) {
+        if (typeof this.state[key] === 'undefined') {
+            throw new Error(
+                `[MotX] unknown field name: ${Object.keys(
+                    this.state
+                )}, ${DEFAULT_FIELD_ERR_MSG}`
+            )
+        }
+    }
 }
 
+class Observer {
+    public deps: Function[] = []
+    constructor() {}
+}
 class Pipe {
     protected pipes: Function[]
 
@@ -342,7 +386,7 @@ class Pipe {
     }
 
     public setState(fieldName: string, newState: State): void {
-        this.send(`set:${fieldName}`, [newState])
+        this.send(`setState:${fieldName}`, [newState])
     }
 
     // public getState(fieldName: string): State {
@@ -362,7 +406,6 @@ const EVENT_CHANNEL_VALID_REG = /[\w\-_\/\\\.]+\s*\@\s*[\w\-_\/\\\.]+/
 const CHANNEL_PARSE_REG = /\s*(([\w\-_\.]+)\s*\:)?\s*([\w\-_\/\\\.]+)\s*/
 
 // 内置
-const Actions = ['set', 'merge']
 
 const DEFAULT_FIELD_ERR_MSG =
     'you should define the fields of store when instantiate MotX'
@@ -377,10 +420,13 @@ const UNKNOWN_ACTION_MSG = (action) =>
     `[MotX] unknown action: ${action}, please register with options.actions before using it`
 const INVALID_REGISTER_CHANNEL_ERR_MSG = (channel) =>
     `[MotX] invalid channel: ${channel}, please check for /[\w\-_]+/`
-
-export type Store = { [fieldName: string]: State }
+const CANNOT_SET_STATE_DIRECTLY = (key) =>
+    `[MotX] please set state with motx.setState(${key}, newState, isolate, silent) or publish(set:${key}, newState)`
 export type State = any
 
+export interface RemoveAutorunFunction {
+    (): void
+}
 export interface Hooks {
     willPublish?(channel: string, args: any[]): boolean
     didPublish?(channel: string, args: any[]): void

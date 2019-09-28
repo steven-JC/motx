@@ -1,6 +1,15 @@
 const MotX = require('../dist').default
 
 describe('Motx', () => {
+    describe('autorun', () => {
+        it('autorun init run', () => {
+            return new Promise((done) => {
+                let motx = new MotX({
+                    store: { list: [] }
+                })
+            })
+        })
+    })
     describe('actions', () => {
         it('action push', () => {
             return new Promise((done) => {
@@ -14,7 +23,7 @@ describe('Motx', () => {
                                     `[MotX] push action need a target type of Array`
                                 )
                             }
-                            this.store.list.push(item)
+                            this.store.state.list.push(item)
                             this.event.emit(
                                 `${target}@change`,
                                 this.getState(target),
@@ -40,13 +49,11 @@ describe('Motx', () => {
                     store,
                     isolate: true
                 })
-                if (motx.getState('bean') !== store.bean) {
-                    const state = {}
-                    motx.setState('bean', state)
-                    if (motx.getState('bean') !== state) {
-                        motx.publish('set:bean', state)
-                        motx.getState('bean') !== state && done()
-                    }
+                const state = {}
+                motx.setState('bean', state)
+                if (motx.getState('bean') !== state) {
+                    motx.publish('setState:bean', state)
+                    motx.getState('bean') !== state && done()
                 }
             })
         })
@@ -57,13 +64,11 @@ describe('Motx', () => {
                     store,
                     isolate: false
                 })
-                if (motx.getState('bean') === store.bean) {
-                    const state = {}
-                    motx.setState('bean', state)
-                    if (motx.getState('bean') === state) {
-                        motx.publish('set:bean', state)
-                        motx.getState('bean') === state && done()
-                    }
+                const state = {}
+                motx.setState('bean', state)
+                if (motx.getState('bean') === state) {
+                    motx.publish('setState:bean', state)
+                    motx.getState('bean') === state && done()
                 }
             })
         })
@@ -405,7 +410,7 @@ describe('Motx', () => {
                         }
                     }
                 })
-                motx.publish('set:fvck', [100])
+                motx.publish('setState:fvck', [100])
             })
         })
     })
@@ -430,7 +435,7 @@ describe('Motx', () => {
                 motx.subscribe('fvck@change', (data) => {
                     i += data
                 })
-                motx.publish('set:fvck', [100])
+                motx.publish('setState:fvck', [100])
                 i === 100 && done()
             })
         })
@@ -441,7 +446,7 @@ describe('Motx', () => {
                 motx.subscribe('fvck@change', () => {
                     i++
                 })
-                motx.publish('set:fvck', [])
+                motx.publish('setState:fvck', [])
                 i === 0 && done()
             })
         })
@@ -558,12 +563,12 @@ describe('Motx', () => {
                 motx.publish('channel', 1, 2, 3)
             })
         })
-        it('publish(set:fvck, true)', () => {
+        it('publish(setState:fvck, true)', () => {
             return new Promise((done) => {
                 motx.subscribe('fvck@change', (data) => {
                     data === true && done()
                 })
-                motx.publish('set:fvck', true)
+                motx.publish('setState:fvck', true)
             })
         })
         it('publish newState & oldState', () => {
@@ -575,26 +580,19 @@ describe('Motx', () => {
                 motx.subscribe('bean@change', (newState, oldState) => {
                     i += newState.count + oldState.count
                 })
-                motx.publish('set:bean', { count: 100 })
+                motx.publish('setState:bean', { count: 100 })
                 i === 111 && done()
             })
         })
-        it('publish(merge:bean, {name})', () => {
-            return new Promise((done) => {
-                motx.subscribe('bean@change', (data) => {
-                    data.count === 1 && data.name === 'beanbean' && done()
-                })
-                motx.publish('merge:bean', { name: 'beanbean' })
-            })
-        })
-        it('publish(set:bean, {name})', () => {
+
+        it('publish(setState:bean, {name})', () => {
             return new Promise((done) => {
                 motx.subscribe('bean@change', (data) => {
                     data.name === 'bean' &&
                         typeof data.count === 'undefined' &&
                         done()
                 })
-                motx.publish('set:bean', { name: 'bean' })
+                motx.publish('setState:bean', { name: 'bean' })
             })
         })
     })
