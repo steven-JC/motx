@@ -99,6 +99,7 @@ Motx 通过 pipe 联通多个进程或多个隔离模块，实现多进程或多
 
 ```typescript
 MotXOptions {
+    name: string;
     store: Store;
     hooks?: Hooks;
     pipes?: {
@@ -108,6 +109,8 @@ MotXOptions {
     channels?: string[];
 }
 ```
+
+-   `name` 实例名，用于同一全局上下通过管道文传输消息，实例名作为管道名
 
 -   `store` 定义存储状态字段和初始数据
 
