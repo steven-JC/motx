@@ -20,7 +20,7 @@ export default class MotX {
 
     /**
      * constructor
-     * @param options {store, hooks, pipes, isolate, channels, actions}
+     * @param options {name, store, hooks, pipes, isolate, channels, actions}
      */
     constructor(options: MotXOptions) {
         const {
@@ -72,16 +72,33 @@ export default class MotX {
         this.store = new Store(JSON.parse(JSON.stringify(store)), this.isolate)
     }
 
+    /**
+     * Get the pipes to publish message to the target MotX instance
+     * @param rule
+     * '*' match all pipe, including the named MotX instance in the same global context
+     * '!pipe1,pipe2' match all pipe, but pipe1,pipe2 excluded
+     * 'pipe1,pipe2' just match pipe1,pipe2
+     * @returns get the pipe to send channel
+     */
     public pipe(rule: string): Pipe {
         const handlers: Function[] = this.filterPipes(rule)
         return new Pipe(handlers)
     }
 
+    /**
+     * Receive a json with channel and args from other motx to publish or setState in current MotX instance
+     * @param jsonStringifyed A json with channel and args which was stringified by other motx
+     */
     public onReceive(jsonStringifyed: string) {
         const { channel, args } = JSON.parse(jsonStringifyed)
         this.publish(channel, ...args)
     }
 
+    /**
+     * Run the handler in sync when called, and run in async when the state it depends is changed
+     * @param handler The autorun handler, receive tow params, rootState and isInitRun
+     * @returns A function to remove this autorun
+     */
     public autorun(
         handler: (rootState: { [key: string]: any }, isInitRun: boolean) => {}
     ): RemoveAutorunFunction {
@@ -93,10 +110,22 @@ export default class MotX {
         }
     }
 
+    /**
+     * Get the state from store by field name
+     * @param fieldName The root field name defined in MotXOptions.store
+     * @param isolate Whether to isolate the object reference
+     */
     public getState(fieldName: string, isolate?: boolean): State {
         return this.store.getState(fieldName, isolate)
     }
 
+    /**
+     * Apply new state to the store, and call the autorun which depended on this field, and publish `fieldName@change`
+     * @param fieldName The root field name defined in MotXOptions.store
+     * @param newState New state to set to the store
+     * @param isolate Whether to isolate the object reference
+     * @param silent  Whether not to publish `fieldName@change`， false by default
+     */
     public setState(
         fieldName: string,
         newState: State,
@@ -143,11 +172,23 @@ export default class MotX {
         }
     }
 
+    /**
+     * Publish message to the channel
+     * @param channel
+     * @param args
+     */
     public publish(channel: string, ...args: any[]) {
         if (
             this.hooks.willPublish &&
             !!this.hooks.willPublish.call(this, channel, args)
         ) {
+            args = args.map((item) => {
+                if (typeof item === 'object') {
+                    return Object.freeze(item)
+                } else {
+                    return item
+                }
+            })
             const parsed = this.parseChannel(channel)
             if (parsed.target && parsed.action) {
                 if (parsed.action === 'setState') {
@@ -172,6 +213,11 @@ export default class MotX {
         }
     }
 
+    /**
+     * Subscribe message from channel
+     * @param channel
+     * @param handler
+     */
     public subscribe(channel: string, handler: (...args: any[]) => void) {
         if (
             this.channels.includes(channel) ||
@@ -183,6 +229,11 @@ export default class MotX {
         }
     }
 
+    /**
+     * Remove all subscriptions by channel or remove the target subscription by a hanlder as the second param
+     * @param channel
+     * @param handler
+     */
     public unsubscribe(channel: string, handler?: (...args: any[]) => void) {
         if (
             this.channels.includes(channel) ||
@@ -194,6 +245,9 @@ export default class MotX {
         }
     }
 
+    /**
+     * Dispose the MotX instance
+     */
     public dispose() {
         ;(this.store as any) = null
         this.event.removeAllListeners()
@@ -255,11 +309,8 @@ export default class MotX {
                     })
                 }
             })
-        } else if (rule.includes(',') || Array.isArray(rule)) {
-            const keys =
-                typeof rule === 'string'
-                    ? rule.split(',').map((item) => item.trim())
-                    : rule
+        } else if (rule.includes(',')) {
+            const keys = rule.split(',').map((item) => item.trim())
             keys.forEach((key) => {
                 if (this.pipes[key]) {
                     handlers.push(this.pipes[key])
@@ -292,6 +343,9 @@ class Store {
     public state: { [key: string]: any }
     public isolate: boolean = true
     protected observers: { [key: string]: Observer } = {}
+
+    protected toRun: Function[] = []
+
     constructor(state: { [key: string]: any }, isolate: boolean) {
         this.state = state
         this.isolate = isolate
@@ -306,12 +360,14 @@ class Store {
         this.checkFieldName(key)
         this.state[key] = this.ifClone(newState, isolate)
         if (!silent) {
-            this.observers[key].deps.forEach((autorun) => {
-                AutoRunTarget = autorun
-                autorun(this.reactData, false)
-                AutoRunTarget = null
+            const deps = this.observers[key].deps
+            deps.forEach((autorun) => {
+                if (!this.toRun.includes(autorun)) {
+                    this.toRun.push(autorun)
+                }
             })
         }
+        this.run()
     }
     public getState(key, isolate) {
         this.checkFieldName(key)
@@ -321,13 +377,14 @@ class Store {
         Object.keys(this.state).forEach((key) => {
             const observer = new Observer()
             this.observers[key] = observer
+            const self = this
             Object.defineProperty(this.reactData, key, {
                 get() {
                     if (AutoRunTarget) {
                         if (!observer.deps.includes(AutoRunTarget))
                             observer.deps.push(AutoRunTarget)
                     }
-                    return this.ifClone(this.store[key])
+                    return self.ifClone(self.state[key])
                 },
                 set(value) {
                     throw new Error(CANNOT_SET_STATE_DIRECTLY(key))
@@ -342,7 +399,7 @@ class Store {
         Object.values(this.observers).forEach(({ deps }: Observer) => {
             const index = deps.indexOf(autorun)
             if (index > -1) {
-                deps.slice(index, 1)
+                deps.splice(index, 1)
             }
         })
         if (AutoRunTarget === autorun) {
@@ -367,6 +424,22 @@ class Store {
                 )}, ${DEFAULT_FIELD_ERR_MSG}`
             )
         }
+    }
+
+    protected run() {
+        const p = Promise.resolve()
+        p.then(() => {
+            while (this.toRun.length) {
+                const autorun = this.toRun.shift()
+                if (autorun) {
+                    AutoRunTarget = autorun
+                    autorun(this.reactData, false)
+                    AutoRunTarget = null
+                }
+            }
+        }).catch((err) => {
+            console.error(err)
+        })
     }
 }
 

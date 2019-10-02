@@ -9,11 +9,13 @@
 内置 TypeScript 声明文件
 
 ```typescript
+
     // #############################################
-    // worker process
+    // 以下代码跑在worker进程
+
     import MotX from 'motx'
     const motx = new MotX({
-        // 使用存储状态前先定义存储字段
+        // 使用存储状态前需先定义存储字段及初始状态
         store: {
             bean: { count: 1 }
         },
@@ -24,27 +26,30 @@
         ]
     })
 
+    // 订阅
     motx.subscribe('change-count', (count)=>{
-        // 发布内置特定格式的channel，`set:${fieldName}` 和 `merge:${fieldName}`，可更新store状态
-        // 更新后，会自动发布 `${被更新字段名}@change` 状态变更消息
-        motx.publish('set:bean', {count})
+        // 更新store状态
+        motx.setState('bean', {count})
     })
 
-    // 订阅 bean 字段的状态变更消息，无需注册
-    motx.subscribe('bean@change', (newState)=>{
-        console.log(newState.count) // 2
+    // 默认初始同步执行一次，以及bean状态变更后自动异步执行，同步多次变更状态会自动节流
+    motx.autorun(({bean})=>{
+        console.log(bean.count)
     })
 
+    // 发布
     motx.publish('change-count', 2)
+
     console.log(motx.getState('bean').count) // 2
 
-    // 接收来自master process的通过motx的pipe传送过来的字符串消息，并注入到当前motx对象，当前motx将会发布相应消息
+    // 接收来自master进程的消息并发布相应消息
     process.on('message', (message)=>{
         motx.onReceive(message)
     })
 
     //#################################################
-    // master process
+    // 以下代码跑在master进程
+
     import MotX from 'motx'
     const worker = ... // worker handler
     const motx = new MotX({
@@ -56,9 +61,9 @@
             }
         }
     })
-    // 'channel >> pipeName' or 'set:bean >> pipeName'
-    // 发布的消息将通过 worker 管道传送到 worker 进程，传入 worker 进程的 motx.onRecieve 触发发布消息
-    motx.publish('change-count >> worker')
+    // 通过 worker 管道将消息传送到 worker 进程
+    motx.pipe('worker').publish('change-count', 3)
+
 
 ```
 
@@ -68,19 +73,15 @@
 
 MotX 基于中介者模式实现消息发布和订阅机制，实现组件间松耦合通讯，订阅和发布都基于特定频道(channel), `publish(channel, data1, data2, ...)` `subscribe(channel, data1, data2, ...)`
 
-为了更好地理解与维护这些 channel，MotX 做了一个限制，需要先注册 channel 才能订阅
-
-推荐在注册 channel 的时候，使用注释描述清楚该 channel 的作用及注意要点
-
-MotX 有两种特殊的不需要注册的 channel：更改状态 channel、状态字段变更 channel
+为了更好地理解与维护这些 channel，MotX 限制使用 channel 前须先注册
 
 ### Store & State
 
-MotX 支持缓存全局应用状态，store 用于存储状态树数据，state 是 store 某字段的数据当前状态，默认进行数据引用隔离
+MotX 支持缓存全局应用状态，store 用于存储状态树数据，state 是 store 某字段当前状态快照，默认进行对象引用隔离
 
-通过 getState 方法获得指定字段的 state，通过 setState 或 motx.publish(`set:${fieldName}`, newState)
+通过 getState 方法获得指定字段的 state，通过 setState 更改 store 的存储状态
 
-注：普通的 channel 发布的数据不会流入 store
+订阅发布的数据不会流入 store，默认也会进行对象引用隔离
 
 ### Hooks
 
@@ -89,6 +90,8 @@ MotX 作为 '中介'，提供三个可以改变发布与更新缓存状态默认
 ### Pipe
 
 Motx 通过 pipe 联通多个进程或多个隔离模块，实现多进程或多隔离模块之间相互发布消息，pipe 需要你基于具体应用场景去定义如何传送 motx 消息字符串数据
+
+同一全局上下文的 MotX 实例
 
 ## API
 
