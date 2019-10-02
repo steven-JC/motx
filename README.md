@@ -91,7 +91,7 @@ MotX 作为 '中介'，提供三个可以改变发布与更新缓存状态默认
 
 Motx 通过 pipe 联通多个进程或多个隔离模块，实现多进程或多隔离模块之间相互发布消息，pipe 需要你基于具体应用场景去定义如何传送 motx 消息字符串数据
 
-同一全局上下文的 MotX 实例
+同一全局上下文含有 name 属性的 MotX 实例可使用 name 作为 pipe 通道名，无需在 MotXOption.pipes 定义
 
 ## API
 
@@ -106,9 +106,6 @@ MotXOptions {
     };
     isolate?: boolean;
     channels?: string[];
-    actions?: {
-        [actionName: string]: Action;
-    };
 }
 ```
 
@@ -126,38 +123,38 @@ MotXOptions {
     -   `didSetState?(fieldName: string, newState: State, isolate: boolean, store?: Store): void` 更改 store 数据后执行
 -   `pipes:{[pipeName: string]: (jsonStringifyed: string): void}`: 定义向其他进程或隔离模块传送数据的方式
     > 发布的 channel 前加上 pipeName# 即可向该管道传送经过`JSON.stringify` 的 publish 相关数据，使 publish 动作应用在目标进程或隔离模块
--   `channels: string[]` 注册频道
--   `actions:{[actionName: string]: (target: string, ...args: any[]): void}` 注册全局 action
-
-    > 内置两个更新 store 的 action，支持 `set` 和 `merge` 两个动作
     >
-    > -   `set` 设置指定字段的值，如：`motx.publish('set:userInfo', {username: 'tom'})`
-    > -   `merge` 使用 assign 的方式混合新旧对象，如：`motx.publish('set:userInfo', {age: 16})`
-
-    > 触发 store 变更后，会自动发布变更字段消息，格式为变更字段名后面接`:change`, 如 `userInfo:change`, 订阅回调会获得该字段变更前后两个状态参数，newState 和 oldState
+    > 同一全局上下文不需要定义，默认使用 MotXOption.name 作为 pipeName
+-   `channels: string[]` 注册频道
 
 ### Methods
 
 -   `publish(channel: string, ...args: any[]): void`
-
     > 发布消息，传递数据，支持多个参数
-
-
-    > 支持向其他进程发布消息，如：
-    >
-    > -   `change-count >> worker` 通过 worker 管道向对应线程发布 change-count 消息
-    > -   `set:userInfo >> worker` 通过 worker 管道向对应线程发布 set:userInfo 消息
-    > -   `set:userInfo >> *` 向所有 pipes 包括 worker 发送 change-count 消息
 
 -   `subscribe(channel: string, handler: Handler): void`
     > 订阅消息
--   `getState(fieldName: string): State`
-    > 获得指定字段的当前状态数据
--   `setState(fieldName: string, newState: State, silent?: boolean): void`
-    > 变更 `store` 状态，支持 `silent` 模式，为 true 时将不会自动发布字段变更消息
+
 -   `unsubscribe(channel: string, handler?: Handler): void`
     > 取消订阅消息
+
+-   `getState(fieldName: string): State`
+    > 获得指定字段的当前状态数据
+
+-   `setState(fieldName: string, newState: State, silent?: boolean): void`
+    > 变更 `store` 状态，支持 `silent` 模式，为 true 时将不会自动发布字段变更消息
+
+-    `autorun(handler: (rootState: {  [key: string]: any; }, isInitRun: boolean) => {}): RemoveAutorunFunction`
+- 
+    > 初始同步执行传入的handler，依赖的state变更后异步执行
+
+-   `pipe(rule: string): Pipe`
+    > 返回管道对象，支持publish和setState
+    >
+    > 通过MotXOption.pipes定义的发送方式，向目标进程发送publish或setState动作相关json字符串
+
 -   `onReceive`
-    > 当前进程或隔离模块接收到其他进程或隔离模块通过 pipe 发送来的数据后，需要执行该方法并将 json 字符串数据传入
+    > 当前进程或隔离模块接收到其他进程或隔离模块通过管道发送来的数据后，需要执行该方法并将 json 字符串数据传入即可执行对应publish或setState动作
+
 -   `dispose()`
-    > 注销内置对象，释放内存
+    > 注销MotX实例
