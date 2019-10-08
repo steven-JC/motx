@@ -203,9 +203,7 @@ describe('Motx', () => {
 
         it('onReceive', () => {
             return new Promise((done) => {
-                let motx = new MotX({
-                    channels: ['channel']
-                })
+                let motx = new MotX({})
                 motx.subscribe('channel', (arg1, arg2) => {
                     arg1 === 1 && arg2 === 2 && done()
                 })

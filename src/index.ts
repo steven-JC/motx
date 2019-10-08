@@ -13,7 +13,6 @@ export default class MotX {
         [pipeName: string]: (jsonStringifyed: string) => void
     }
     protected isolate: boolean
-    protected channels: string[]
     protected actions: {
         [actionName: string]: (target: string, ...args: any[]) => void
     }
@@ -57,14 +56,6 @@ export default class MotX {
             ) => {},
             ...hooks
         }
-        this.channels = channels.map((item) => {
-            item = item.trim()
-            if (CHANNEL_VALID_REG.test(item)) {
-                return item
-            } else {
-                throw new Error(INVALID_REGISTER_CHANNEL_ERR_MSG(item))
-            }
-        })
 
         this.pipes = pipes
         this.actions = actions
@@ -184,7 +175,7 @@ export default class MotX {
         ) {
             args = args.map((item) => {
                 if (typeof item === 'object') {
-                    return Object.freeze(item)
+                    return this.store.ifClone(item)
                 } else {
                     return item
                 }
@@ -203,10 +194,8 @@ export default class MotX {
                         ...args
                     )
                 }
-            } else if (this.channels.includes(channel)) {
-                this.event.emit(channel, ...args)
             } else {
-                throw new Error(UNKNOWN_CHANNEL_MSG(this.name, channel))
+                this.event.emit(channel, ...args)
             }
             this.hooks.didPublish &&
                 this.hooks.didPublish.call(this, channel, args)
@@ -219,13 +208,10 @@ export default class MotX {
      * @param handler
      */
     public subscribe(channel: string, handler: (...args: any[]) => void) {
-        if (
-            this.channels.includes(channel) ||
-            EVENT_CHANNEL_VALID_REG.test(channel)
-        ) {
+        if (CHANNEL_VALID_REG.test(channel)) {
             this.event.on(channel, handler)
         } else {
-            throw new Error(UNKNOWN_CHANNEL_MSG(this.name, channel))
+            throw new Error(INVALID_CHANNEL_MSG(this.name, channel))
         }
     }
 
@@ -235,13 +221,10 @@ export default class MotX {
      * @param handler
      */
     public unsubscribe(channel: string, handler?: (...args: any[]) => void) {
-        if (
-            this.channels.includes(channel) ||
-            EVENT_CHANNEL_VALID_REG.test(channel)
-        ) {
+        if (CHANNEL_VALID_REG.test(channel)) {
             this.event.off(channel, handler)
         } else {
-            throw new Error(UNKNOWN_CHANNEL_MSG(this.name, channel))
+            throw new Error(INVALID_CHANNEL_MSG(this.name, channel))
         }
     }
 
@@ -309,6 +292,11 @@ export default class MotX {
                     })
                 }
             })
+            if (!this.name && !excludes.includes('self')) {
+                handlers.push((jsonStringifyed: string) => {
+                    this.onReceive(jsonStringifyed)
+                })
+            }
         } else if (rule.includes(',')) {
             const keys = rule.split(',').map((item) => item.trim())
             keys.forEach((key) => {
@@ -454,7 +442,7 @@ class Pipe {
         this.pipes = pipes
     }
 
-    public publish(channel: string, ...args: Function[]) {
+    public publish(channel: string, ...args: any[]) {
         this.send(channel, args)
     }
 
@@ -474,8 +462,7 @@ class Pipe {
     }
 }
 
-const CHANNEL_VALID_REG = /[\w\-_\/\\\.]+/
-const EVENT_CHANNEL_VALID_REG = /[\w\-_\/\\\.]+\s*\@\s*[\w\-_\/\\\.]+/
+const CHANNEL_VALID_REG = /[\w\-_\/\\\.\:\@]+/
 const CHANNEL_PARSE_REG = /\s*(([\w\-_\.]+)\s*\:)?\s*([\w\-_\/\\\.]+)\s*/
 
 // 内置
@@ -485,10 +472,8 @@ const DEFAULT_FIELD_ERR_MSG =
 const NEW_STATE_UNDEFINED_ERR_MSG = '[MotX] new state should not be undefined'
 const UNKNOWN_PIPE_NAME_MSG = (pipeName) =>
     `[MotX] the pipe or the motx instance is not found: ${pipeName}`
-const UNKNOWN_CHANNEL_MSG = (motxName, channel) =>
-    `[MotX] unknown channel: ${channel}${
-        motxName ? ' in ' + motxName : ''
-    }, please register with options.channels before using it`
+const INVALID_CHANNEL_MSG = (motxName, channel) =>
+    `[MotX] unknown channel: ${channel}${motxName ? ' in ' + motxName : ''}`
 const UNKNOWN_ACTION_MSG = (action) =>
     `[MotX] unknown action: ${action}, please register with options.actions before using it`
 const INVALID_REGISTER_CHANNEL_ERR_MSG = (channel) =>
@@ -518,7 +503,7 @@ export interface Hooks {
 }
 export interface MotXOptions {
     name?: string
-    store?: Store
+    store?: { [fileName: string]: any }
     hooks?: Hooks
     pipes?: { [pipeName: string]: (jsonStringifyed: string) => void }
     isolate?: boolean
