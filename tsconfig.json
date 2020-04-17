@@ -4,18 +4,27 @@
         "baseUrl": "src",
         "outDir": "dist",
         "module": "commonjs",
-        "target": "es5",
-        "lib": ["es2017", "dom"],
-        "sourceMap": true,
+        "strict": false,
+        "importHelpers": true,
         "moduleResolution": "node",
-        "noImplicitReturns": true,
-        "noImplicitThis": true,
+        "noUnusedLocals": true,
+        "experimentalDecorators": true,
+        "esModuleInterop": true,
         "noImplicitAny": false,
-        "strictNullChecks": true,
-        "suppressImplicitAnyIndexErrors": true,
-        "noUnusedLocals": false,
-        "declaration": true
+        "allowSyntheticDefaultImports": true,
+        "sourceMap": false,
+        "types": ["node"],
+        "declaration": true,
+        "typeRoots": ["node_modules/@types", "typings"],
+
+        "lib": ["esnext", "dom", "dom.iterable", "scripthost"]
     },
-    "include": ["src/*"],
-    "exclude": ["node_modules", "dist"]
+    "include": [
+        "typings/**/*.ts",
+        "src/**/*.ts",
+        "src/**/*.tsx",
+        "src/**/*.json",
+        "src/**/*.vue"
+    ],
+    "exclude": ["node_modules", "dist", "src/demo"]
 }

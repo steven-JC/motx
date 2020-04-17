@@ -1,4 +1,4 @@
-import * as EventEmitter from 'eventemitter3'
+import EventEmitter from 'eventemitter3'
 
 const MotXInstances: { [key: string]: MotX } = {}
 
@@ -445,7 +445,7 @@ export interface Hooks {
 }
 export interface MotXOptions {
     name?: string
-    store?: Store
+    store?: PlainObject
     hooks?: Hooks
     pipes?: { [pipeName: string]: (jsonStringifyed: string) => void }
     isolate?: boolean

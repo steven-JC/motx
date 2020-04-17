@@ -1,6 +1,6 @@
 {
     "name": "motx",
-    "version": "1.0.4",
+    "version": "1.2.4",
     "description": "A lightweight application state transfer and storage tool based on the mediator pattern and provides efficient solutions to communication problems between multiple processes or closed modules",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
@@ -8,6 +8,7 @@
         "dist"
     ],
     "scripts": {
+        "serve": "cross-env NODE_ENV=development webpack-dev-server  --hot --inline --config build/webpack.web.config.js",
         "dev": "tsc -w",
         "prepare": "tsc",
         "test-dev": "mocha test/*.spec.js --recursive --inspect --watch --full-trace --bail --async-only --timeout 1000"
@@ -18,8 +19,8 @@
     },
     "keywords": [
         "mediator",
-        "store",
-        "state",
+        "subscribe",
+        "publish",
         "state management"
     ],
     "author": "stevenjc.chen",
@@ -29,8 +30,31 @@
     },
     "devDependencies": {
         "@types/node": "^12.6.8",
+        "babel-core": "^6.26.3",
+        "babel-loader": "^7.1.4",
+        "babel-plugin-transform-runtime": "^6.23.0",
+        "babel-preset-env": "^1.7.0",
+        "babel-preset-stage-0": "^6.24.1",
+        "babel-register": "^6.26.0",
+        "babili-webpack-plugin": "^0.1.2",
+        "cross-env": "^7.0.2",
+        "html-webpack-plugin": "^4.2.0",
         "mocha": "^6.2.0",
-        "typescript": "3.0.1"
+        "ts-loader": "^6.0.4",
+        "tslint": "^5.18.0",
+        "tslint-loader": "^3.5.4",
+        "typescript": "^3.5.3",
+        "vue": "^2.6.11",
+        "vue-html-loader": "^1.2.4",
+        "vue-loader": "^15.2.4",
+        "vue-property-decorator": "^8.4.1",
+        "vue-style-loader": "^4.1.0",
+        "vue-template-compiler": "^2.5.16",
+        "vuex-class": "^0.3.2",
+        "webpack": "^4.15.1",
+        "webpack-cli": "^3.0.8",
+        "webpack-dev-server": "^3.1.4",
+        "webpack-hot-middleware": "^2.22.2"
     },
     "dependencies": {
         "eventemitter3": "^4.0.0"

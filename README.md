@@ -62,6 +62,33 @@
 
 ```
 
+## work with Vue
+
+#### In entry
+
+```typescript
+import MotxVue from 'motx/motx-vue'
+const motx = new MotxVue({ store: { hello: `hello world ~ ~` } })
+Vue.use(motx)
+```
+
+#### In vue components
+
+```vue
+<template>
+    <section>{{ hell }}</section>
+</template>
+<script lang="ts">
+import { Component, Vue } from 'vue-property-decorator'
+import { State } from 'motx/motx-vue'
+@Component({})
+export default class App extends Vue {
+    @State('hello')
+    protected hell
+}
+</script>
+```
+
 ## 基础概念
 
 ### Mediator
