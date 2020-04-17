@@ -39,7 +39,7 @@ export default class MotxVue extends Motx {
         }
         this.options = { ...options }
     }
-    public install(Vue) {
+    protected install(Vue) {
         const connections = this.connections
         const me = this
         Vue.mixin({

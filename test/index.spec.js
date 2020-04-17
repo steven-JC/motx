@@ -1,15 +1,6 @@
 const MotX = require('../dist').default
 
 describe('Motx', () => {
-    describe('autorun', () => {
-        it('autorun init run', () => {
-            return new Promise((done) => {
-                let motx = new MotX({
-                    store: { list: [] }
-                })
-            })
-        })
-    })
     describe('actions', () => {
         it('action push', () => {
             return new Promise((done) => {
@@ -212,9 +203,7 @@ describe('Motx', () => {
 
         it('onReceive', () => {
             return new Promise((done) => {
-                let motx = new MotX({
-                    channels: ['channel']
-                })
+                let motx = new MotX({})
                 motx.subscribe('channel', (arg1, arg2) => {
                     arg1 === 1 && arg2 === 2 && done()
                 })

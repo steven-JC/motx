@@ -13,14 +13,13 @@ export default class MotX {
         [pipeName: string]: (jsonStringifyed: string) => void
     }
     protected isolate: boolean
-    protected channels: string[]
     protected actions: {
         [actionName: string]: (target: string, ...args: any[]) => void
     }
 
     /**
      * constructor
-     * @param options {store, hooks, pipes, isolate, channels, actions}
+     * @param options {name, store, hooks, pipes, isolate, actions}
      */
     constructor(options: MotXOptions) {
         const {
@@ -29,14 +28,15 @@ export default class MotX {
             hooks = {},
             isolate = true,
             pipes = {},
-            channels = [],
             actions = {}
         } = options
 
-        if (name) {
-            MotXInstances[name] = this
-            this.name = name
+        if (!name) {
+            throw new Error('[Motx] MotXOptions.name is required.')
         }
+
+        MotXInstances[name] = this
+        this.name = name
 
         this.event = new EventEmitter()
         this.isolate = isolate
@@ -57,14 +57,6 @@ export default class MotX {
             ) => {},
             ...hooks
         }
-        this.channels = channels.map((item) => {
-            item = item.trim()
-            if (CHANNEL_VALID_REG.test(item)) {
-                return item
-            } else {
-                throw new Error(INVALID_REGISTER_CHANNEL_ERR_MSG(item))
-            }
-        })
 
         this.pipes = pipes
         this.actions = actions
@@ -72,16 +64,33 @@ export default class MotX {
         this.store = new Store(JSON.parse(JSON.stringify(store)), this.isolate)
     }
 
+    /**
+     * Get the pipes to publish message to the target MotX instance
+     * @param rule
+     * '*' match all pipe, including the named MotX instance in the same global context
+     * '!pipe1,pipe2' match all pipe, but pipe1,pipe2 excluded
+     * 'pipe1,pipe2' just match pipe1,pipe2
+     * @returns get the pipe to send channel
+     */
     public pipe(rule: string): Pipe {
         const handlers: Function[] = this.filterPipes(rule)
         return new Pipe(handlers)
     }
 
+    /**
+     * Receive a json with channel and args from other motx to publish or setState in current MotX instance
+     * @param jsonStringifyed A json with channel and args which was stringified by other motx
+     */
     public onReceive(jsonStringifyed: string) {
         const { channel, args } = JSON.parse(jsonStringifyed)
         this.publish(channel, ...args)
     }
 
+    /**
+     * Run the handler in sync when called, and run in async when the state it depends is changed
+     * @param handler The autorun handler, receive tow params, rootState and isInitRun
+     * @returns A function to remove this autorun
+     */
     public autorun(
         handler: (rootState: { [key: string]: any }, isInitRun: boolean) => {}
     ): RemoveAutorunFunction {
@@ -93,10 +102,22 @@ export default class MotX {
         }
     }
 
+    /**
+     * Get the state from store by field name
+     * @param fieldName The root field name defined in MotXOptions.store
+     * @param isolate Whether to isolate the object reference
+     */
     public getState(fieldName: string, isolate?: boolean): State {
         return this.store.getState(fieldName, isolate)
     }
 
+    /**
+     * Apply new state to the store, and call the autorun which depended on this field, and publish `fieldName@change`
+     * @param fieldName The root field name defined in MotXOptions.store
+     * @param newState New state to set to the store
+     * @param isolate Whether to isolate the object reference
+     * @param silent  Whether not to publish `fieldName@change`， false by default
+     */
     public setState(
         fieldName: string,
         newState: State,
@@ -143,11 +164,23 @@ export default class MotX {
         }
     }
 
+    /**
+     * Publish message to the channel
+     * @param channel
+     * @param args
+     */
     public publish(channel: string, ...args: any[]) {
         if (
             this.hooks.willPublish &&
             !!this.hooks.willPublish.call(this, channel, args)
         ) {
+            args = args.map((item) => {
+                if (typeof item === 'object') {
+                    return this.store.ifClone(item)
+                } else {
+                    return item
+                }
+            })
             const parsed = this.parseChannel(channel)
             if (parsed.target && parsed.action) {
                 if (parsed.action === 'setState') {
@@ -162,38 +195,43 @@ export default class MotX {
                         ...args
                     )
                 }
-            } else if (this.channels.includes(channel)) {
-                this.event.emit(channel, ...args)
             } else {
-                throw new Error(UNKNOWN_CHANNEL_MSG(this.name, channel))
+                this.event.emit(channel, ...args)
             }
             this.hooks.didPublish &&
                 this.hooks.didPublish.call(this, channel, args)
         }
     }
 
+    /**
+     * Subscribe message from channel
+     * @param channel
+     * @param handler
+     */
     public subscribe(channel: string, handler: (...args: any[]) => void) {
-        if (
-            this.channels.includes(channel) ||
-            EVENT_CHANNEL_VALID_REG.test(channel)
-        ) {
+        if (CHANNEL_VALID_REG.test(channel)) {
             this.event.on(channel, handler)
         } else {
-            throw new Error(UNKNOWN_CHANNEL_MSG(this.name, channel))
+            throw new Error(INVALID_CHANNEL_MSG(this.name, channel))
         }
     }
 
+    /**
+     * Remove all subscriptions by channel or remove the target subscription by a hanlder as the second param
+     * @param channel
+     * @param handler
+     */
     public unsubscribe(channel: string, handler?: (...args: any[]) => void) {
-        if (
-            this.channels.includes(channel) ||
-            EVENT_CHANNEL_VALID_REG.test(channel)
-        ) {
+        if (CHANNEL_VALID_REG.test(channel)) {
             this.event.off(channel, handler)
         } else {
-            throw new Error(UNKNOWN_CHANNEL_MSG(this.name, channel))
+            throw new Error(INVALID_CHANNEL_MSG(this.name, channel))
         }
     }
 
+    /**
+     * Dispose the MotX instance
+     */
     public dispose() {
         ;(this.store as any) = null
         this.event.removeAllListeners()
@@ -255,11 +293,13 @@ export default class MotX {
                     })
                 }
             })
-        } else if (rule.includes(',') || Array.isArray(rule)) {
-            const keys =
-                typeof rule === 'string'
-                    ? rule.split(',').map((item) => item.trim())
-                    : rule
+            if (!this.name && !excludes.includes('self')) {
+                handlers.push((jsonStringifyed: string) => {
+                    this.onReceive(jsonStringifyed)
+                })
+            }
+        } else if (rule.includes(',')) {
+            const keys = rule.split(',').map((item) => item.trim())
             keys.forEach((key) => {
                 if (this.pipes[key]) {
                     handlers.push(this.pipes[key])
@@ -292,6 +332,9 @@ class Store {
     public state: { [key: string]: any }
     public isolate: boolean = true
     protected observers: { [key: string]: Observer } = {}
+
+    protected toRun: Function[] = []
+
     constructor(state: { [key: string]: any }, isolate: boolean) {
         this.state = state
         this.isolate = isolate
@@ -306,12 +349,14 @@ class Store {
         this.checkFieldName(key)
         this.state[key] = this.ifClone(newState, isolate)
         if (!silent) {
-            this.observers[key].deps.forEach((autorun) => {
-                AutoRunTarget = autorun
-                autorun(this.reactData, false)
-                AutoRunTarget = null
+            const deps = this.observers[key].deps
+            deps.forEach((autorun) => {
+                if (!this.toRun.includes(autorun)) {
+                    this.toRun.push(autorun)
+                }
             })
         }
+        this.run()
     }
     public getState(key, isolate) {
         this.checkFieldName(key)
@@ -321,13 +366,14 @@ class Store {
         Object.keys(this.state).forEach((key) => {
             const observer = new Observer()
             this.observers[key] = observer
+            const self = this
             Object.defineProperty(this.reactData, key, {
                 get() {
                     if (AutoRunTarget) {
                         if (!observer.deps.includes(AutoRunTarget))
                             observer.deps.push(AutoRunTarget)
                     }
-                    return this.ifClone(this.store[key])
+                    return self.ifClone(self.state[key])
                 },
                 set(value) {
                     throw new Error(CANNOT_SET_STATE_DIRECTLY(key))
@@ -342,7 +388,7 @@ class Store {
         Object.values(this.observers).forEach(({ deps }: Observer) => {
             const index = deps.indexOf(autorun)
             if (index > -1) {
-                deps.slice(index, 1)
+                deps.splice(index, 1)
             }
         })
         if (AutoRunTarget === autorun) {
@@ -368,6 +414,22 @@ class Store {
             )
         }
     }
+
+    protected run() {
+        const p = Promise.resolve()
+        p.then(() => {
+            while (this.toRun.length) {
+                const autorun = this.toRun.shift()
+                if (autorun) {
+                    AutoRunTarget = autorun
+                    autorun(this.reactData, false)
+                    AutoRunTarget = null
+                }
+            }
+        }).catch((err) => {
+            console.error(err)
+        })
+    }
 }
 
 class Observer {
@@ -381,7 +443,7 @@ class Pipe {
         this.pipes = pipes
     }
 
-    public publish(channel: string, ...args: Function[]) {
+    public publish(channel: string, ...args: any[]) {
         this.send(channel, args)
     }
 
@@ -401,8 +463,7 @@ class Pipe {
     }
 }
 
-const CHANNEL_VALID_REG = /[\w\-_\/\\\.]+/
-const EVENT_CHANNEL_VALID_REG = /[\w\-_\/\\\.]+\s*\@\s*[\w\-_\/\\\.]+/
+const CHANNEL_VALID_REG = /[\w\-_\/\\\.\:\@]+/
 const CHANNEL_PARSE_REG = /\s*(([\w\-_\.]+)\s*\:)?\s*([\w\-_\/\\\.]+)\s*/
 
 // 内置
@@ -412,14 +473,10 @@ const DEFAULT_FIELD_ERR_MSG =
 const NEW_STATE_UNDEFINED_ERR_MSG = '[MotX] new state should not be undefined'
 const UNKNOWN_PIPE_NAME_MSG = (pipeName) =>
     `[MotX] the pipe or the motx instance is not found: ${pipeName}`
-const UNKNOWN_CHANNEL_MSG = (motxName, channel) =>
-    `[MotX] unknown channel: ${channel}${
-        motxName ? ' in ' + motxName : ''
-    }, please register with options.channels before using it`
+const INVALID_CHANNEL_MSG = (motxName, channel) =>
+    `[MotX] unknown channel: ${channel}${motxName ? ' in ' + motxName : ''}`
 const UNKNOWN_ACTION_MSG = (action) =>
     `[MotX] unknown action: ${action}, please register with options.actions before using it`
-const INVALID_REGISTER_CHANNEL_ERR_MSG = (channel) =>
-    `[MotX] invalid channel: ${channel}, please check for /[\w\-_]+/`
 const CANNOT_SET_STATE_DIRECTLY = (key) =>
     `[MotX] please set state with motx.setState(${key}, newState, isolate, silent) or publish(set:${key}, newState)`
 export type State = any
@@ -444,12 +501,11 @@ export interface Hooks {
     ): void
 }
 export interface MotXOptions {
-    name?: string
-    store?: PlainObject
+    name: string
+    store?: { [fileName: string]: any }
     hooks?: Hooks
     pipes?: { [pipeName: string]: (jsonStringifyed: string) => void }
     isolate?: boolean
-    channels?: string[]
     actions?: { [actionName: string]: (target: string, ...args: any[]) => void }
 }
 
