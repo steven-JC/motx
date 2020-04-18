@@ -1,6 +1,6 @@
 {
     "name": "motx",
-    "version": "3.0.2",
+    "version": "3.0.5",
     "description": "A lightweight application state transfer and storage tool based on the mediator pattern and provides efficient solutions to communication problems between multiple processes or closed modules",
     "main": "dist/index.js",
     "types": "dist/index.d.ts",
