@@ -19,26 +19,24 @@ export default class MotxVue extends Motx {
     protected options: MotXOptions
     constructor(options: MotXOptions) {
         super(options)
-        if (options.hooks && options.hooks.didSetState) {
-            const didSetState = this.hooks.didSetState
-            const connections = this.connections
-            this.hooks.didSetState = (fieldName, newState, isolate, store) => {
-                didSetState(fieldName, newState, isolate, store)
-                const cnns = connections[fieldName]
-                if (cnns && cnns.length) {
-                    for (let i = 0, l = cnns.length; i < l; i++) {
-                        if (cnns[i]) {
-                            cnns[i].comp[cnns[i].propName] = this.getState(
-                                cnns[i].statePath
-                            )
-                        }
+        const didSetState = this.hooks.didSetState
+        const connections = this.connections
+        this.hooks.didSetState = (fieldName, newState, isolate, store) => {
+            didSetState(fieldName, newState, isolate, store)
+            const cnns = connections[fieldName]
+            if (cnns && cnns.length) {
+                for (let i = 0, l = cnns.length; i < l; i++) {
+                    if (cnns[i]) {
+                        cnns[i].comp[cnns[i].propName] = this.getState(
+                            cnns[i].statePath
+                        )
                     }
                 }
             }
         }
         this.options = { ...options }
     }
-    protected install(Vue) {
+    public install(Vue) {
         const connections = this.connections
         const me = this
         Vue.mixin({
@@ -95,6 +93,7 @@ export default class MotxVue extends Motx {
             propName,
             statePath
         })
+        // 返回组件默认数据
         return this.getState(statePath)
     }
 }
