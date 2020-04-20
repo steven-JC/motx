@@ -2,7 +2,7 @@ import EventEmitter from 'eventemitter3'
 
 const MotXInstances: { [key: string]: MotX } = {}
 
-let AutoRunTarget: Function | null = null
+let AutoRunTarget: Func | null = null
 
 export default class MotX {
     protected name: string = ''
@@ -42,7 +42,7 @@ export default class MotX {
         this.isolate = isolate
         this.hooks = {
             willPublish: (channel: string, args: any[]) => true,
-            didPublish: (channel: string, args: any[]) => {},
+            didPublish: (channel: string, args: any[]) => true,
             willSetState: (
                 fieldName: string,
                 newState: State,
@@ -54,7 +54,7 @@ export default class MotX {
                 newState: State,
                 isolate: boolean,
                 store: Store
-            ) => {},
+            ) => true,
             ...hooks
         }
 
@@ -73,7 +73,7 @@ export default class MotX {
      * @returns get the pipe to send channel
      */
     public pipe(rule: string): Pipe {
-        const handlers: Function[] = this.filterPipes(rule)
+        const handlers: Func[] = this.filterPipes(rule)
         return new Pipe(handlers)
     }
 
@@ -93,7 +93,7 @@ export default class MotX {
      */
     public autorun(
         handler: (rootState: { [key: string]: any }, isInitRun: boolean) => {}
-    ): RemoveAutorunFunction {
+    ): RemoveAutorunFunc {
         AutoRunTarget = handler
         handler(this.store.reactData, true)
         AutoRunTarget = null
@@ -153,7 +153,7 @@ export default class MotX {
                 )
             }
 
-            this.hooks.didSetState &&
+            if (this.hooks.didSetState) {
                 this.hooks.didSetState.call(
                     this,
                     fieldName,
@@ -161,6 +161,7 @@ export default class MotX {
                     this.isolate,
                     this.store
                 )
+            }
         }
     }
 
@@ -196,10 +197,13 @@ export default class MotX {
                     )
                 }
             } else {
+                this.event.emit(`${channel}:before`, ...args)
                 this.event.emit(channel, ...args)
+                this.event.emit(`${channel}:after`, ...args)
             }
-            this.hooks.didPublish &&
+            if (this.hooks.didPublish) {
                 this.hooks.didPublish.call(this, channel, args)
+            }
         }
     }
 
@@ -271,7 +275,7 @@ export default class MotX {
     }
 
     protected filterPipes(rule: string) {
-        const handlers: Function[] = []
+        const handlers: Func[] = []
         if (rule === '*' || rule[0] === '!') {
             let excludes: string[] = []
             if (rule[0] === '!') {
@@ -333,7 +337,7 @@ class Store {
     public isolate: boolean = true
     protected observers: { [key: string]: Observer } = {}
 
-    protected toRun: Function[] = []
+    protected toRun: Func[] = []
 
     constructor(state: { [key: string]: any }, isolate: boolean) {
         this.state = state
@@ -362,27 +366,6 @@ class Store {
         this.checkFieldName(key)
         return this.ifClone(this.state[key], isolate)
     }
-    protected observe() {
-        Object.keys(this.state).forEach((key) => {
-            const observer = new Observer()
-            this.observers[key] = observer
-            const self = this
-            Object.defineProperty(this.reactData, key, {
-                get() {
-                    if (AutoRunTarget) {
-                        if (!observer.deps.includes(AutoRunTarget))
-                            observer.deps.push(AutoRunTarget)
-                    }
-                    return self.ifClone(self.state[key])
-                },
-                set(value) {
-                    throw new Error(CANNOT_SET_STATE_DIRECTLY(key))
-                },
-                enumerable: true,
-                configurable: false
-            })
-        })
-    }
 
     public removeAutorun(autorun) {
         Object.values(this.observers).forEach(({ deps }: Observer) => {
@@ -402,7 +385,9 @@ class Store {
         }
         if (state && typeof state === 'object') {
             return JSON.parse(JSON.stringify(state))
-        } else return state
+        } else {
+            return state
+        }
     }
 
     public checkFieldName(key) {
@@ -414,7 +399,28 @@ class Store {
             )
         }
     }
-
+    protected observe() {
+        Object.keys(this.state).forEach((key) => {
+            const observer = new Observer()
+            this.observers[key] = observer
+            const self = this
+            Object.defineProperty(this.reactData, key, {
+                get() {
+                    if (AutoRunTarget) {
+                        if (!observer.deps.includes(AutoRunTarget)) {
+                            observer.deps.push(AutoRunTarget)
+                        }
+                    }
+                    return self.ifClone(self.state[key])
+                },
+                set(value) {
+                    throw new Error(CANNOT_SET_STATE_DIRECTLY(key))
+                },
+                enumerable: true,
+                configurable: false
+            })
+        })
+    }
     protected run() {
         const p = Promise.resolve()
         p.then(() => {
@@ -433,13 +439,12 @@ class Store {
 }
 
 class Observer {
-    public deps: Function[] = []
-    constructor() {}
+    public deps: Func[] = []
 }
 class Pipe {
-    protected pipes: Function[]
+    protected pipes: Func[]
 
-    constructor(pipes: Function[]) {
+    constructor(pipes: Func[]) {
         this.pipes = pipes
     }
 
@@ -481,9 +486,7 @@ const CANNOT_SET_STATE_DIRECTLY = (key) =>
     `[MotX] please set state with motx.setState(${key}, newState, isolate, silent) or publish(set:${key}, newState)`
 export type State = any
 
-export interface RemoveAutorunFunction {
-    (): void
-}
+type RemoveAutorunFunc = () => void
 export interface Hooks {
     willPublish?(channel: string, args: any[]): boolean
     didPublish?(channel: string, args: any[]): void
@@ -512,3 +515,5 @@ export interface MotXOptions {
 export interface PlainObject {
     [key: string]: any
 }
+
+type Func = (...args) => any

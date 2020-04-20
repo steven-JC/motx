@@ -13,6 +13,7 @@
         "object-literal-sort-keys": false,
         "no-consecutive-blank-lines": false,
         "semicolon": false,
+        "max-classes-per-file": false,
         "no-eval": false,
         "align": false,
         "class-name": true,

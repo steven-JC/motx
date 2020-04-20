@@ -8,8 +8,7 @@ export const State = (stateName): any => {
     if (stateName.includes('.')) {
         throw new Error('[motx-vue] sub path is not supported.')
     }
-    return function (target, property: string) {
-        console.log(arguments)
+    return function(target, property: string) {
         target.$MotxState = target.$MotxState || {}
         target.$MotxState[property] = stateName
     }
@@ -27,7 +26,7 @@ export default class MotxVue extends Motx {
                 didSetState(fieldName, newState, isolate, store)
                 const cnns = connections[fieldName]
                 if (cnns && cnns.length) {
-                    for (var i = 0, l = cnns.length; i < l; i++) {
+                    for (let i = 0, l = cnns.length; i < l; i++) {
                         if (cnns[i]) {
                             cnns[i].comp[cnns[i].propName] = this.getState(
                                 cnns[i].statePath
@@ -46,7 +45,6 @@ export default class MotxVue extends Motx {
             created() {
                 if (this.$data) {
                     const motxOpts = this.$data.$MotxState
-                    console.log(motxOpts, this)
                     if (motxOpts) {
                         for (const x in motxOpts) {
                             if (motxOpts.hasOwnProperty(x)) {
@@ -64,17 +62,23 @@ export default class MotxVue extends Motx {
                 if (this.$data.$MotxState) {
                     const stateOption = this.$data.$MotxState
                     let tmp
-                    for (var x in stateOption) {
-                        tmp = []
-                        for (
-                            var i = 0, l = connections[stateOption[x]].length;
-                            i < l;
-                            i++
-                        ) {
-                            if (connections[stateOption[x]][i].comp !== this)
-                                tmp.push(connections[stateOption[x]][i])
+                    for (const x in stateOption) {
+                        if (stateOption[x]) {
+                            tmp = []
+                            for (
+                                let i = 0,
+                                    l = connections[stateOption[x]].length;
+                                i < l;
+                                i++
+                            ) {
+                                if (
+                                    connections[stateOption[x]][i].comp !== this
+                                ) {
+                                    tmp.push(connections[stateOption[x]][i])
+                                }
+                            }
+                            connections[stateOption[x]] = tmp
                         }
-                        connections[stateOption[x]] = tmp
                     }
                 }
             }
@@ -82,14 +86,15 @@ export default class MotxVue extends Motx {
     }
     protected connectState(targetObject, propName, statePath) {
         const connections = this.connections
-        if (!statePath) throw '[tunk]:unknown module name:' + statePath
+        if (!statePath) {
+            throw '[tunk]:unknown module name:' + statePath
+        }
         connections[statePath] = connections[statePath] || []
         connections[statePath].push({
             comp: targetObject,
-            propName: propName,
-            statePath: statePath
+            propName,
+            statePath
         })
-        //返回组件默认数据
         return this.getState(statePath)
     }
 }

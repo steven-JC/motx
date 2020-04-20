@@ -4,8 +4,8 @@
 <script lang="ts">
 import { Component, Vue } from 'vue-property-decorator'
 import { State } from '../motx-vue'
-import { PlainObject } from '..'
 import CSub from './Sub.vue'
+import motx from './motx'
 @Component({
     components: { CSub }
 })
@@ -15,7 +15,14 @@ export default class App extends Vue {
     protected show = true
     protected mounted() {
         setTimeout(() => {
-            this.show = false
+            motx.setState('hello', 'funckkkkk')
+        }, 1000)
+        setTimeout(() => {
+            motx.setState('hello', 'funck')
+        }, 2000)
+
+        setTimeout(() => {
+            motx.setState('hello', 'funck333333')
         }, 3000)
     }
 }
